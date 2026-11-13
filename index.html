@@ -112,6 +112,27 @@ input[type=range]{width:100%;accent-color:var(--amber);height:28px}
 #camErr{position:absolute;inset:0;display:grid;place-items:center;padding:24px;text-align:center;color:#ddd}
 #camErr .box{max-width:340px;display:grid;gap:12px}
 #credit{position:absolute;right:max(12px,env(safe-area-inset-right,0px));top:calc(env(safe-area-inset-top,0px) + 56px);font-size:11px;color:#ddd;text-shadow:0 1px 2px #000}
+/* 部品の切り抜き */
+#cut{position:fixed;inset:0;z-index:1100;background:var(--ink);display:grid;grid-template-rows:auto auto 1fr auto;padding-block:calc(env(safe-area-inset-top,0px) + 10px) calc(env(safe-area-inset-bottom,0px) + 10px);padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px));gap:8px}
+.cut-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.cut-head b{font-family:var(--f-display);font-size:18px;color:#eef0f3}
+.tools{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.tool{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:13px}
+.tool[aria-pressed=true]{background:var(--amber);color:var(--amber-ink);border-color:var(--amber);font-weight:700}
+#cutBox{overflow:auto;background:#000;border-radius:6px;min-height:0;position:relative;-webkit-overflow-scrolling:touch}
+#cutCv{display:block;margin:0 auto;touch-action:none}
+#cutStatus{position:sticky;left:0;top:0;display:inline-block;margin:6px;background:#000c;color:#fff;font-size:12px;border-radius:4px;padding:3px 8px;pointer-events:none}
+.cut-foot{display:grid;gap:8px}
+.names{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px}
+.names .tool{flex:none}
+.layer-list{display:flex;gap:6px;overflow-x:auto}
+.layer-list .tool{flex:none}
+/* AR画面の部品パネル */
+#parts{position:absolute;left:0;right:0;bottom:0;z-index:5;background:#0b0e13f2;border-top:1px solid var(--line);padding:12px max(14px,env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 12px) max(14px,env(safe-area-inset-left,0px));display:grid;gap:8px;max-height:55%;overflow:auto}
+.part{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;font-size:14px;color:#eee}
+.part input[type=checkbox]{width:20px;height:20px;accent-color:var(--amber)}
+.part .mv{font-size:12px;padding:4px 10px}
+.part input[type=range]{grid-column:2 / 4;height:22px}
 #toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 140px);transform:translateX(-50%);background:#000d;color:#fff;padding:8px 16px;border-radius:999px;font-size:13px;z-index:2000;pointer-events:none;max-width:calc(100% - 32px);text-align:center}
 </style>
 </head>
@@ -155,6 +176,7 @@ input[type=range]{width:100%;accent-color:var(--amber);height:28px}
   <h2 id="editTitle">写真を追加</h2>
   <form id="form">
     <div class="pick"><span id="pickLabel">タップして古い写真を選ぶ</span><img id="pickImg" alt="" hidden><input type="file" id="file" accept="image/*"></div>
+    <button type="button" class="btn" id="partsBtn" hidden>✂ 部品を切り抜く（人・車・看板・水路など）</button>
     <label class="f">タイトル<input type="text" id="fTitle" placeholder="例：駅前通り 商店街" maxlength="60" required></label>
     <label class="f">年代<input type="text" id="fYear" placeholder="例：1964年ごろ" maxlength="30"></label>
     <div class="f" style="display:grid;gap:6px;font-size:13px;color:var(--dim)">撮影場所（地図をタップ）
@@ -184,7 +206,7 @@ input[type=range]{width:100%;accent-color:var(--amber);height:28px}
   <div id="stage">
     <video id="bgVideo" playsinline muted autoplay></video>
     <img id="bgImg" alt="" hidden>
-    <img id="old" alt="">
+    <canvas id="old"></canvas>
     <div id="wipeLine" hidden></div>
   </div>
   <div id="camErr" hidden>
@@ -210,9 +232,37 @@ input[type=range]{width:100%;accent-color:var(--amber);height:28px}
         <button class="chip" id="modeWipe">ワイプ</button>
         <button class="chip" id="lockBtn">ロック</button>
         <button class="chip" id="resetBtn">戻す</button>
+        <button class="chip" id="partsChip">部品</button>
       </div>
       <button class="shutter" id="shot" aria-label="重ねた写真を保存"></button>
     </div>
+  </div>
+  <div id="parts" hidden>
+    <div class="row" style="justify-content:space-between"><b style="color:#fff">部品</b><div class="row"><button class="chip" id="partsEdit">切り抜く</button><button class="chip" id="partsClose">閉じる</button></div></div>
+    <div id="partsList" style="display:grid;gap:10px"></div>
+    <p class="hint">チェックを外すと、その部分だけ今の景色が見えます。「動かす」を押すと、その部品だけ指で動かせます。</p>
+  </div>
+</section>
+
+<!-- 部品の切り抜き -->
+<section id="cut" hidden>
+  <div class="cut-head"><b>部品を切り抜く</b><button class="btn" id="cutDone">完了</button></div>
+  <div class="tools">
+    <button class="tool" data-tool="ai" aria-pressed="true">👆 タップで選ぶ</button>
+    <button class="tool" data-tool="add" aria-pressed="false">なぞって足す</button>
+    <button class="tool" data-tool="erase" aria-pressed="false">なぞって消す</button>
+    <button class="tool" data-tool="pan" aria-pressed="false">✋ 移動</button>
+    <button class="tool" id="zoomBtn">拡大 1×</button>
+    <button class="tool" id="undoBtn">元に戻す</button>
+  </div>
+  <div id="cutBox"><span id="cutStatus">選びたい物をタップしてください</span><canvas id="cutCv"></canvas></div>
+  <div class="cut-foot">
+    <div class="names" id="names"></div>
+    <div class="row" style="justify-content:space-between">
+      <button class="btn" id="cutClear">選択をやり直す</button>
+      <button class="btn primary" id="cutSave">この部品を保存</button>
+    </div>
+    <div class="layer-list" id="layerList"></div>
   </div>
 </section>
 
@@ -364,6 +414,7 @@ function show(view){
   $('mine').hidden = view !== 'mine';
   $('edit').hidden = view !== 'edit';
   $('ar').hidden = view !== 'ar';
+  $('cut').hidden = view !== 'cut';
   const main = view === 'map' || view === 'mine';
   $('tabs').hidden = !main; $('addBtn').hidden = !main;
   if (main){ tab = view; $('tabMap').setAttribute('aria-selected', view === 'map'); $('tabMine').setAttribute('aria-selected', view === 'mine'); }
@@ -470,6 +521,7 @@ function openEdit(p){
   if (p) $('pickImg').src = urlFor(p);
   $('file').value = '';
   $('delBtn').hidden = !p;
+  $('partsBtn').hidden = !p;
   $('delBtn').textContent = p?.sharedId ? '削除（公開も取り消す）' : '削除';
   $('shareBox').hidden = !fb;
   $('fPublic').checked = !!p?.sharedId; $('fRights').checked = !!p?.sharedId; $('rightsRow').hidden = !p?.sharedId;
@@ -499,6 +551,7 @@ $('cancelBtn').onclick = backToTab;
 $('file').onchange = async e => {
   const f = e.target.files[0]; if (!f) return;
   pendingBlob = await shrink(f);
+  $('partsBtn').hidden = true;   // 写真を差し替えたら部品は作り直し
   $('pickImg').src = URL.createObjectURL(pendingBlob); $('pickImg').hidden = false; $('pickLabel').hidden = true;
 };
 $('hereBtn').onclick = () => {
@@ -545,6 +598,9 @@ $('form').onsubmit = async e => {
     title: $('fTitle').value.trim(), year: $('fYear').value.trim(), note: $('fNote').value.trim(),
     blob, lat: ll?.lat ?? null, lng: ll?.lng ?? null, heading: pendingHeading,
     align: pendingBlob ? null : editing?.align || null,
+    layers: pendingBlob ? [] : editing?.layers || [],
+    baseOn: pendingBlob ? true : editing?.baseOn ?? true,
+    baseOp: pendingBlob ? 1 : editing?.baseOp ?? 1,
     sharedId: editing?.sharedId || null,
   };
   const btn = $('saveBtn'); btn.disabled = true; btn.textContent = wantPublic ? '公開中…' : '保存中…';
@@ -597,9 +653,8 @@ async function openAr(p){
   const mine = p.kind === 'local' || (p.uid && p.uid === myId);
   $('arAction').textContent = p.kind === 'local' ? '編集' : mine ? '取り下げ' : '報告';
   $('arAction').dataset.armed = '';
-  if (curUrl) URL.revokeObjectURL(curUrl);
-  old.src = curUrl = URL.createObjectURL(p.blob);
-  await old.decode().catch(() => {});
+  moveTarget = null; $('parts').hidden = true;
+  await prepareOverlay(p);
   const saved = p.align || {};
   A = {x:saved.x ?? 0, y:saved.y ?? 0, s:saved.s ?? 1, r:saved.r ?? 0};
   mode = saved.mode || 'fade'; mix = saved.mix ?? 60; locked = false;
@@ -622,7 +677,15 @@ async function saveAlign(){
   if (!cur) return;
   const a = {...A, mode, mix};
   if (cur.kind === 'shared') lsSet('align:' + cur.id, a);   // 他の人の写真の合わせ位置は自分の端末にだけ保存
-  else { const p = photos.find(x => x.id === cur.id); if (p){ p.align = a; await putPhoto(p); } }
+  else {
+    const p = photos.find(x => x.id === cur.id);
+    if (p){
+      p.align = a;
+      if (ov){ p.baseOn = ov.baseOn; p.baseOp = ov.baseOp;
+        p.layers = (p.layers || []).map(L => { const l = ov.layers.find(x => x.id === L.id); return l ? {...L, visible:l.visible, opacity:l.opacity, dx:l.dx, dy:l.dy, s:l.s} : L; }); }
+      await putPhoto(p);
+    }
+  }
 }
 async function closeAr(){ stopCam(); await saveAlign(); backToTab(); }
 $('closeAr').onclick = closeAr;
@@ -646,7 +709,7 @@ $('snap').onchange = e => {
 };
 
 function baseSize(){
-  const W = innerWidth, H = innerHeight, iw = old.naturalWidth || 1, ih = old.naturalHeight || 1;
+  const W = innerWidth, H = innerHeight, iw = old.width || 1, ih = old.height || 1;
   const k = Math.min(W/iw, H/ih);
   return {w: iw*k, h: ih*k};
 }
@@ -675,7 +738,7 @@ $('modeFade').onclick = () => setMode('fade');
 $('modeWipe').onclick = () => setMode('wipe');
 $('mix').oninput = e => { mix = +e.target.value; apply(); };
 $('lockBtn').onclick = () => { locked = !locked; $('lockBtn').classList.toggle('on', locked); toast(locked ? '位置をロックしました' : 'ロックを解除しました'); };
-$('resetBtn').onclick = () => { A = {x:0, y:0, s:1, r:0}; apply(); };
+$('resetBtn').onclick = () => { if (moveTarget){ moveTarget.dx = moveTarget.dy = 0; moveTarget.s = 1; compose(); return; } A = {x:0, y:0, s:1, r:0}; apply(); };
 addEventListener('resize', () => { if (!$('ar').hidden) apply(); });
 
 function updateGuide(){
@@ -705,6 +768,7 @@ stage.addEventListener('pointermove', e => {
   if (!pts.has(e.pointerId)) return;
   pts.set(e.pointerId, {x:e.clientX, y:e.clientY});
   const P = [...pts.values()];
+  if (moveTarget && gest?.L){ moveLayer(P); return; }
   if (P.length === 1 && gest?.n === 1){
     A.x = gest.A.x + P[0].x - gest.p[0].x; A.y = gest.A.y + P[0].y - gest.p[0].y;
   } else if (P.length >= 2 && gest?.n >= 2){
@@ -719,7 +783,7 @@ stage.addEventListener('pointermove', e => {
 });
 const up = e => { pts.delete(e.pointerId); startGest(); };
 stage.addEventListener('pointerup', up); stage.addEventListener('pointercancel', up);
-function startGest(){ gest = pts.size ? {n:pts.size, p:[...pts.values()].map(p => ({...p})), A:{...A}} : null; }
+function startGest(){ gest = pts.size ? {n:pts.size, p:[...pts.values()].map(p => ({...p})), A:{...A}, L: moveTarget ? {dx:moveTarget.dx || 0, dy:moveTarget.dy || 0, s:moveTarget.s || 1} : null} : null; }
 stage.addEventListener('wheel', e => { if (locked) return; e.preventDefault(); if (e.shiftKey) A.r += e.deltaY > 0 ? 1 : -1; else A.s = Math.min(8, Math.max(.2, A.s * (e.deltaY > 0 ? .95 : 1.05))); apply(); }, {passive:false});
 
 $('shot').onclick = async () => {
@@ -746,6 +810,281 @@ $('shot').onclick = async () => {
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click();
   toast('画像を保存しました');
 };
+
+/* ---------- 部品（レイヤー） ----------
+   重い処理は「開いたとき1回」と「タップ1回ごとに1回」だけ。カメラ表示中は毎フレーム計算しない。 */
+const WORK = 1600;                       // 合成に使う最大サイズ
+const SEG_SIZE = 512;                    // AI に渡す画像の最大サイズ（小さいほど軽い）
+const MP_VER = '0.10.14';
+const MP_MODEL = 'https://storage.googleapis.com/mediapipe-models/interactive_segmenter/magic_touch/float32/1/magic_touch.tflite';
+const newCanvas = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
+async function loadImg(blob){ const im = new Image(); im.src = URL.createObjectURL(blob); await im.decode(); return im; }
+function workCanvas(im){
+  const k = Math.min(1, WORK / Math.max(im.naturalWidth, im.naturalHeight));
+  const c = newCanvas(Math.round(im.naturalWidth*k), Math.round(im.naturalHeight*k));
+  c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+  return c;
+}
+async function blobToCanvas(blob, w, h){ const im = await loadImg(blob); const c = newCanvas(w, h); c.getContext('2d').drawImage(im, 0, 0, w, h); URL.revokeObjectURL(im.src); return c; }
+function maskBBox(mask){
+  const st = 4, w = Math.ceil(mask.width/st), h = Math.ceil(mask.height/st);
+  const t = newCanvas(w, h), g = t.getContext('2d', {willReadFrequently:true}); g.drawImage(mask, 0, 0, w, h);
+  const d = g.getImageData(0, 0, w, h).data; let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (d[(y*w + x)*4 + 3] > 20){ if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  return x1 < 0 ? null : {cx:(x0 + x1 + 1)/2*st, cy:(y0 + y1 + 1)/2*st};
+}
+
+let ov = null, moveTarget = null, composeQueued = false;
+async function prepareOverlay(p){
+  const im = await loadImg(p.blob); const src = workCanvas(im); URL.revokeObjectURL(im.src);
+  const layers = [];
+  for (const L of (p.kind === 'local' ? p.layers || [] : [])){
+    const mask = await blobToCanvas(L.mask, src.width, src.height);
+    const cut = newCanvas(src.width, src.height), g = cut.getContext('2d');
+    g.drawImage(src, 0, 0); g.globalCompositeOperation = 'destination-in'; g.drawImage(mask, 0, 0);
+    layers.push({id:L.id, name:L.name, visible:L.visible ?? true, opacity:L.opacity ?? 1, dx:L.dx || 0, dy:L.dy || 0, s:L.s || 1, mask, cut, bbox:maskBBox(mask) || {cx:0, cy:0}});
+  }
+  // 背景＝部品を切り抜いた残り。部品を消すと、その穴から今の景色が見える
+  const base = newCanvas(src.width, src.height), g = base.getContext('2d');
+  g.drawImage(src, 0, 0); g.globalCompositeOperation = 'destination-out'; layers.forEach(l => g.drawImage(l.mask, 0, 0));
+  ov = {base, layers, baseOn: p.kind === 'local' ? p.baseOn ?? true : true, baseOp: p.kind === 'local' ? p.baseOp ?? 1 : 1};
+  old.width = src.width; old.height = src.height;
+  compose();
+}
+function compose(){
+  composeQueued = false;
+  const g = old.getContext('2d'); g.clearRect(0, 0, old.width, old.height);
+  if (ov.baseOn){ g.globalAlpha = ov.baseOp; g.drawImage(ov.base, 0, 0); }
+  for (const l of ov.layers){
+    if (!l.visible) continue;
+    g.save(); g.globalAlpha = l.opacity;
+    g.translate(l.bbox.cx + l.dx, l.bbox.cy + l.dy); g.scale(l.s, l.s); g.drawImage(l.cut, -l.bbox.cx, -l.bbox.cy);
+    g.restore();
+  }
+  g.globalAlpha = 1;
+}
+const scheduleCompose = () => { if (!composeQueued){ composeQueued = true; requestAnimationFrame(compose); } };
+function moveLayer(P){
+  const k = baseSize().w / old.width * A.s, rot = -A.r*Math.PI/180;
+  const rotd = (x, y) => [x*Math.cos(rot) - y*Math.sin(rot), x*Math.sin(rot) + y*Math.cos(rot)];
+  if (P.length === 1 && gest.n === 1){
+    const [dx, dy] = rotd(P[0].x - gest.p[0].x, P[0].y - gest.p[0].y);
+    moveTarget.dx = gest.L.dx + dx/k; moveTarget.dy = gest.L.dy + dy/k;
+  } else if (P.length >= 2 && gest.n >= 2){
+    const [a, b] = P, [a0, b0] = gest.p;
+    moveTarget.s = Math.min(6, Math.max(.2, gest.L.s * Math.hypot(b.x-a.x, b.y-a.y) / (Math.hypot(b0.x-a0.x, b0.y-a0.y) || 1)));
+  }
+  scheduleCompose();
+}
+
+function renderParts(){
+  const list = $('partsList');
+  if (!ov.layers.length){
+    const p = document.createElement('p'); p.className = 'hint';
+    p.textContent = 'まだ部品がありません。「切り抜く」を押して、人・車・看板などを選んでください。';
+    list.replaceChildren(p); return;
+  }
+  const row = (name, on, op, setOn, setOp, layer) => {
+    const d = document.createElement('div'); d.className = 'part';
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = on; cb.setAttribute('aria-label', name + 'を表示');
+    cb.onchange = () => { setOn(cb.checked); compose(); };
+    const t = document.createElement('span'); t.textContent = name;
+    d.append(cb, t);
+    if (layer){
+      const mv = document.createElement('button'); mv.className = 'chip mv' + (moveTarget === layer ? ' on' : '');
+      mv.textContent = moveTarget === layer ? '動かし中' : '動かす';
+      mv.onclick = () => {
+        moveTarget = moveTarget === layer ? null : layer;
+        toast(moveTarget ? `「${layer.name}」だけ指で動かせます（2本指で大きさ）` : '写真全体を動かすモードに戻りました');
+        renderParts();
+        if (moveTarget) $('parts').hidden = true;
+      };
+      d.append(mv);
+    } else d.append(document.createElement('span'));
+    const r = document.createElement('input'); r.type = 'range'; r.min = 0; r.max = 100; r.value = Math.round(op*100); r.setAttribute('aria-label', name + 'の濃さ');
+    r.oninput = () => { setOp(r.value/100); scheduleCompose(); };
+    d.append(r);
+    return d;
+  };
+  list.replaceChildren(
+    ...ov.layers.map(l => row(l.name, l.visible, l.opacity, v => l.visible = v, v => l.opacity = v, l)),
+    row('そのほか（背景）', ov.baseOn, ov.baseOp, v => ov.baseOn = v, v => ov.baseOp = v, null)
+  );
+}
+$('partsChip').onclick = () => {
+  if (cur.kind !== 'local') return toast('部品に分けられるのは「わたしの写真」だけです');
+  if (moveTarget){ moveTarget = null; toast('写真全体を動かすモードに戻りました'); }
+  renderParts(); $('parts').hidden = false;
+};
+$('partsClose').onclick = () => { $('parts').hidden = true; };
+$('partsEdit').onclick = async () => { stopCam(); await saveAlign(); openCut(photos.find(x => x.id === cur.id), 'ar'); };
+$('partsBtn').onclick = () => openCut(editing, 'edit');
+
+/* ---------- 切り抜き画面 ---------- */
+const NAMES = ['人', '車', '看板', '家', '地面・砂利', '水路', '木', '電柱', 'その他'];
+const cutCv = $('cutCv'), cg = cutCv.getContext('2d');
+let cutP = null, cutFrom = 'edit', cutSrc = null, cutMask = null, cutDone = null, cutTool = 'ai', cutZoom = 1, cutName = '人', undoStack = [];
+let seg = null, segLoading = null;
+const tintCv = newCanvas(1, 1);
+
+async function openCut(p, from){
+  if (!p) return;
+  cutP = p; cutFrom = from; show('cut');
+  const im = await loadImg(p.blob); cutSrc = workCanvas(im); URL.revokeObjectURL(im.src);
+  cutCv.width = cutSrc.width; cutCv.height = cutSrc.height;
+  cutMask = newCanvas(cutSrc.width, cutSrc.height); undoStack = [];
+  await rebuildDone();
+  renderNames(); renderLayerList(); setTool('ai'); setZoom(1); drawCut();
+  getSeg().catch(() => {});   // 先に準備だけ始める（2回目以降はブラウザのキャッシュで速い）
+}
+async function rebuildDone(){
+  // 保存済みの部品をまとめて1枚に（表示用）
+  cutDone = newCanvas(cutSrc.width, cutSrc.height);
+  const g = cutDone.getContext('2d');
+  for (const L of cutP.layers || []) g.drawImage(await blobToCanvas(L.mask, cutSrc.width, cutSrc.height), 0, 0);
+}
+function tinted(mask, color){
+  tintCv.width = mask.width; tintCv.height = mask.height;
+  const g = tintCv.getContext('2d'); g.globalCompositeOperation = 'source-over'; g.fillStyle = color; g.fillRect(0, 0, mask.width, mask.height);
+  g.globalCompositeOperation = 'destination-in'; g.drawImage(mask, 0, 0);
+  return tintCv;
+}
+function drawCut(){
+  cg.globalAlpha = 1; cg.drawImage(cutSrc, 0, 0);
+  cg.globalAlpha = .45; cg.drawImage(tinted(cutDone, '#7dd3fc'), 0, 0);
+  cg.globalAlpha = .6; cg.drawImage(tinted(cutMask, '#e0a84f'), 0, 0);
+  cg.globalAlpha = 1;
+}
+function setTool(t){
+  cutTool = t;
+  document.querySelectorAll('[data-tool]').forEach(b => b.setAttribute('aria-pressed', b.dataset.tool === t));
+  cutCv.style.touchAction = t === 'pan' ? 'auto' : 'none';
+  cutStatus(t === 'ai' ? '選びたい物をタップしてください' : t === 'add' ? '指でなぞった所を足します' : t === 'erase' ? '指でなぞった所を消します' : '指で画面を動かせます');
+}
+document.querySelectorAll('[data-tool]').forEach(b => b.onclick = () => setTool(b.dataset.tool));
+function setZoom(z){
+  cutZoom = z; $('zoomBtn').textContent = `拡大 ${z}×`;
+  const box = $('cutBox'), base = Math.min(box.clientWidth, box.clientHeight * cutSrc.width / cutSrc.height);
+  cutCv.style.width = Math.floor(base * z) + 'px';
+}
+$('zoomBtn').onclick = () => { setZoom(cutZoom === 1 ? 2 : cutZoom === 2 ? 4 : 1); if (cutZoom > 1 && cutTool === 'ai') cutStatus('拡大しました。「✋ 移動」で場所を動かせます'); };
+function cutStatus(t){ $('cutStatus').textContent = t; }
+function renderNames(){
+  $('names').replaceChildren(...NAMES.map(n => {
+    const b = document.createElement('button'); b.className = 'tool'; b.textContent = n; b.setAttribute('aria-pressed', n === cutName);
+    b.onclick = () => { cutName = n; renderNames(); };
+    return b;
+  }));
+}
+function renderLayerList(){
+  const L = cutP.layers || [];
+  $('layerList').replaceChildren(...L.map(l => {
+    const b = document.createElement('button'); b.className = 'tool'; b.textContent = `${l.name} ×`;
+    b.onclick = async () => {
+      if (b.dataset.armed !== '1'){ b.dataset.armed = '1'; b.textContent = `${l.name}を削除？`; setTimeout(() => { b.dataset.armed = ''; b.textContent = `${l.name} ×`; }, 2500); return; }
+      cutP.layers = L.filter(x => x.id !== l.id); await putPhoto(cutP); await rebuildDone(); renderLayerList(); drawCut(); toast('削除しました');
+    };
+    return b;
+  }));
+  if (!L.length){ const s = document.createElement('span'); s.className = 'hint'; s.textContent = '保存した部品はここに並びます（水色で表示）'; $('layerList').append(s); }
+}
+function pushUndo(){
+  const c = newCanvas(cutMask.width, cutMask.height); c.getContext('2d').drawImage(cutMask, 0, 0);
+  undoStack.push(c); if (undoStack.length > 6) undoStack.shift();
+}
+$('undoBtn').onclick = () => {
+  const c = undoStack.pop(); if (!c) return toast('これ以上戻せません');
+  const g = cutMask.getContext('2d'); g.globalCompositeOperation = 'copy'; g.drawImage(c, 0, 0); g.globalCompositeOperation = 'source-over'; drawCut();
+};
+$('cutClear').onclick = () => { pushUndo(); cutMask.getContext('2d').clearRect(0, 0, cutMask.width, cutMask.height); drawCut(); };
+
+function getSeg(){
+  if (seg) return Promise.resolve(seg);
+  return segLoading ||= (async () => {
+    const base = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VER}/`;
+    const m = await import(base + 'vision_bundle.mjs');
+    const files = await m.FilesetResolver.forVisionTasks(base + 'wasm');
+    seg = await m.InteractiveSegmenter.createFromOptions(files, {
+      baseOptions:{modelAssetPath:MP_MODEL, delegate:'CPU'}, outputCategoryMask:false, outputConfidenceMasks:true,
+    });
+    return seg;
+  })().catch(e => { segLoading = null; throw e; });
+}
+let segBusy = false;
+async function runSeg(x, y){
+  if (segBusy) return;
+  segBusy = true;
+  cutStatus(seg ? '切り抜き中…' : '切り抜きAIを準備中…（初回だけ約7MB）');
+  try{
+    const s = await getSeg();
+    cutStatus('切り抜き中…');
+    await new Promise(r => setTimeout(r, 20));   // 表示を更新してから計算
+    const k = Math.min(1, SEG_SIZE / Math.max(cutSrc.width, cutSrc.height));
+    const small = newCanvas(Math.round(cutSrc.width*k), Math.round(cutSrc.height*k));
+    small.getContext('2d').drawImage(cutSrc, 0, 0, small.width, small.height);
+    pushUndo();
+    s.segment(small, {keypoint:{x:x/cutSrc.width, y:y/cutSrc.height}}, r => {
+      const m = r.confidenceMasks[0], f = m.getAsFloat32Array(), w = m.width, h = m.height;
+      const id = new ImageData(w, h);
+      for (let i = 0; i < f.length; i++){
+        const a = Math.max(0, Math.min(1, (f[i] - .3) / .4));
+        id.data[i*4] = id.data[i*4 + 1] = id.data[i*4 + 2] = 255; id.data[i*4 + 3] = a*255;
+      }
+      const t = newCanvas(w, h); t.getContext('2d').putImageData(id, 0, 0);
+      cutMask.getContext('2d').drawImage(t, 0, 0, cutMask.width, cutMask.height);
+    });
+    drawCut();
+    cutStatus('選べました。続けてタップで範囲を足す／はみ出しは「なぞって消す」');
+  }catch(e){
+    console.error(e); cutStatus('AIを使えませんでした。「なぞって足す」で選べます');
+  }finally{ segBusy = false; }
+}
+
+// 切り抜き画面の指操作
+let cutDown = null;
+const cutPos = e => { const r = cutCv.getBoundingClientRect(); return {x:(e.clientX - r.left)/r.width*cutSrc.width, y:(e.clientY - r.top)/r.height*cutSrc.height, k:cutSrc.width/r.width}; };
+function brush(a, b){
+  const g = cutMask.getContext('2d');
+  g.globalCompositeOperation = cutTool === 'erase' ? 'destination-out' : 'source-over';
+  g.strokeStyle = '#fff'; g.lineCap = g.lineJoin = 'round'; g.lineWidth = 28 * a.k / Math.max(1, cutZoom/1.5);
+  g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x + .01, b.y); g.stroke();
+  g.globalCompositeOperation = 'source-over';
+}
+cutCv.addEventListener('pointerdown', e => {
+  if (cutTool === 'pan') return;
+  cutCv.setPointerCapture(e.pointerId);
+  cutDown = {id:e.pointerId, sx:e.clientX, sy:e.clientY, last:cutPos(e)};
+  if (cutTool === 'add' || cutTool === 'erase'){ pushUndo(); brush(cutDown.last, cutDown.last); drawCut(); }
+});
+cutCv.addEventListener('pointermove', e => {
+  if (!cutDown || e.pointerId !== cutDown.id || cutTool === 'ai') return;
+  const p = cutPos(e); brush(cutDown.last, p); cutDown.last = p;
+  if (!composeQueued){ composeQueued = true; requestAnimationFrame(() => { composeQueued = false; drawCut(); }); }
+});
+cutCv.addEventListener('pointerup', e => {
+  if (!cutDown || e.pointerId !== cutDown.id) return;
+  if (cutTool === 'ai' && Math.hypot(e.clientX - cutDown.sx, e.clientY - cutDown.sy) < 10){ const p = cutPos(e); runSeg(p.x, p.y); }
+  cutDown = null;
+});
+cutCv.addEventListener('pointercancel', () => { cutDown = null; });
+
+$('cutSave').onclick = async () => {
+  if (!maskBBox(cutMask)) return toast('まず部品を選んでください');
+  const blob = await new Promise(r => cutMask.toBlob(r, 'image/png'));
+  const same = (cutP.layers || []).filter(l => l.name === cutName || l.name.startsWith(cutName + ' ')).length;
+  const name = same ? `${cutName} ${same + 1}` : cutName;
+  cutP.layers = [...(cutP.layers || []), {id:crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), name, mask:blob, visible:true, opacity:1, dx:0, dy:0, s:1}];
+  await putPhoto(cutP);
+  cutDone.getContext('2d').drawImage(cutMask, 0, 0);
+  cutMask.getContext('2d').clearRect(0, 0, cutMask.width, cutMask.height); undoStack = [];
+  renderLayerList(); drawCut(); toast(`「${name}」を保存しました`);
+};
+$('cutDone').onclick = async () => {
+  await load();
+  const p = photos.find(x => x.id === cutP.id);
+  if (cutFrom === 'ar') openAr({...p, kind:'local'}); else openEdit(p);
+};
+addEventListener('resize', () => { if (!$('cut').hidden && cutSrc) setZoom(cutZoom); });
 
 let tt;
 function toast(msg){ const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(tt); tt = setTimeout(() => t.hidden = true, 2400); }
