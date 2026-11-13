@@ -71,7 +71,9 @@ h2{font-family:var(--f-display);font-size:20px;margin:0 0 16px;color:#eef0f3}
 .empty b{color:var(--silver)}
 .empty ol{padding-left:1.3em;margin:8px 0 0}
 
-.fab{position:fixed;z-index:800;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + var(--tab-h) + 16px);background:var(--amber);color:var(--amber-ink);border:0;border-radius:999px;padding:13px 24px;font-weight:700;box-shadow:0 6px 24px #0008;white-space:nowrap}
+.fabs{position:fixed;z-index:800;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + var(--tab-h) + 16px);display:flex;gap:10px;align-items:center}
+.fab-main{background:var(--amber);color:var(--amber-ink);border:0;border-radius:999px;padding:15px 26px;font-weight:700;font-size:16px;box-shadow:0 6px 24px #0008;white-space:nowrap}
+.fab-sub{background:var(--ink);color:var(--silver);border:1px solid var(--line);border-radius:999px;padding:12px 16px;font-weight:700;box-shadow:0 6px 24px #0008;white-space:nowrap}
 
 form{display:grid;gap:16px}
 label.f{display:grid;gap:6px;font-size:13px;color:var(--dim)}
@@ -169,7 +171,7 @@ input[type=range]{width:100%;accent-color:var(--amber);height:28px}
   <button role="tab" id="tabMap" aria-selected="true">みんなの地図</button>
   <button role="tab" id="tabMine" aria-selected="false">わたしの写真</button>
 </nav>
-<button class="fab" id="addBtn">＋ 写真を追加</button>
+<div class="fabs" id="fabs"><button class="fab-main" id="lookBtn">📷 かざして見る</button><button class="fab-sub" id="addBtn">＋ 追加</button></div>
 
 <!-- 追加・編集 -->
 <section id="edit" class="wrap" hidden>
@@ -179,15 +181,17 @@ input[type=range]{width:100%;accent-color:var(--amber);height:28px}
     <button type="button" class="btn" id="partsBtn" hidden>✂ 部品を切り抜く（人・車・看板・水路など）</button>
     <label class="f">タイトル<input type="text" id="fTitle" placeholder="例：駅前通り 商店街" maxlength="60" required></label>
     <label class="f">年代<input type="text" id="fYear" placeholder="例：1964年ごろ" maxlength="30"></label>
-    <div class="f" style="display:grid;gap:6px;font-size:13px;color:var(--dim)">撮影場所（地図をタップ）
+    <div class="f" style="display:grid;gap:6px;font-size:13px;color:var(--dim)">撮影場所と向き（地図をタップ）
       <div id="pickMap"></div>
       <input type="text" id="fLatLng" placeholder="35.6812, 139.7671（Googleマップの座標を貼ってもOK）" inputmode="decimal" aria-label="緯度と経度">
     </div>
     <div class="row">
       <button type="button" class="btn" id="hereBtn">今いる場所</button>
-      <button type="button" class="btn" id="headBtn">今向いている方角も記録</button>
+      <button type="button" class="btn" id="dirBtn">地図で向きを指定</button>
+      <button type="button" class="btn" id="headBtn">今向いている方角</button>
       <span class="hint" id="headVal"></span>
     </div>
+    <p class="hint"><b>向きの記録が大事です。</b>向きを記録した写真は、その場所でカメラをその方向に向けるだけで、昔の風景として現れます。「地図で向きを指定」を押してから、写っている方向をタップしてください。</p>
     <label class="f">メモ<textarea id="fNote" rows="2" maxlength="500" placeholder="出典や思い出など"></textarea></label>
     <div class="share" id="shareBox">
       <label class="check"><input type="checkbox" id="fPublic"> <span>みんなの地図に公開する<br><span class="hint">誰でも見られるようになります。撮影場所の記録が必要です。</span></span></label>
@@ -233,6 +237,7 @@ input[type=range]{width:100%;accent-color:var(--amber);height:28px}
         <button class="chip" id="lockBtn">ロック</button>
         <button class="chip" id="resetBtn">戻す</button>
         <button class="chip" id="partsChip">部品</button>
+        <button class="chip on" id="followBtn">追従</button>
       </div>
       <button class="shutter" id="shot" aria-label="重ねた写真を保存"></button>
     </div>
@@ -386,7 +391,22 @@ if ('geolocation' in navigator){
   }, () => { $('locStatus').textContent = '位置情報オフ'; }, {enableHighAccuracy:true, maximumAge:5000});
 } else $('locStatus').textContent = '位置情報なし';
 
-let orientationOn = false;
+let orientationOn = false, pitch = null;
+const H_FOV = 50;   // スマホを縦に持ったときのカメラの横の画角（度）。写真が景色に貼り付いて動く量の基準
+const wrap = d => ((d % 360) + 540) % 360 - 180;
+const DIRS = ['北','北東','東','南東','南','南西','西','北西'];
+const dirName = h => DIRS[Math.round(h / 45) % 8];
+// 背面カメラが向いている方角（W3C の計算式）
+function camHeading(alpha, beta, gamma){
+  const r = Math.PI / 180, x = beta*r, y = gamma*r, z = alpha*r;
+  const cX = Math.cos(x), cY = Math.cos(y), cZ = Math.cos(z), sX = Math.sin(x), sY = Math.sin(y), sZ = Math.sin(z);
+  const Vx = -cZ*sY - sZ*sX*cY, Vy = -sZ*sY + cZ*sX*cY;
+  let h = Math.atan(Vx / Vy);
+  if (Vy < 0) h += Math.PI; else if (Vx < 0) h += 2*Math.PI;
+  return h * 180 / Math.PI;
+}
+let applyQueued = false;
+const scheduleApply = () => { if (!applyQueued){ applyQueued = true; requestAnimationFrame(() => { applyQueued = false; if (!$('ar').hidden){ apply(); if (!lookMode) updateGuide(); } }); } };
 async function startOrientation(){
   if (orientationOn) return true;
   try{
@@ -396,9 +416,12 @@ async function startOrientation(){
   }catch{ return false; }
   const onO = e => {
     let h = null;
-    if (typeof e.webkitCompassHeading === 'number') h = e.webkitCompassHeading;   // iOS
-    else if (e.absolute && e.alpha != null) h = (360 - e.alpha) % 360;           // Android
-    if (h != null){ heading = h; if (!$('ar').hidden) updateGuide(); }
+    if (typeof e.webkitCompassHeading === 'number') h = e.webkitCompassHeading;                 // iOS
+    else if (e.absolute && e.alpha != null) h = camHeading(e.alpha, e.beta || 0, e.gamma || 0);  // Android
+    // 手ぶれで写真が震えないよう、少しずつ追いかける（ローパス）
+    if (e.beta != null) pitch = pitch == null ? e.beta : pitch + (e.beta - pitch) * .25;
+    if (h != null) heading = heading == null ? h : (heading + wrap(h - heading) * .25 + 360) % 360;
+    if (!$('ar').hidden) scheduleApply();
   };
   addEventListener('deviceorientationabsolute', onO);
   addEventListener('deviceorientation', onO);
@@ -416,7 +439,7 @@ function show(view){
   $('ar').hidden = view !== 'ar';
   $('cut').hidden = view !== 'cut';
   const main = view === 'map' || view === 'mine';
-  $('tabs').hidden = !main; $('addBtn').hidden = !main;
+  $('tabs').hidden = !main; $('fabs').hidden = !main;
   if (main){ tab = view; $('tabMap').setAttribute('aria-selected', view === 'map'); $('tabMine').setAttribute('aria-selected', view === 'mine'); }
   if (view === 'map') setTimeout(() => map.invalidateSize(), 0);
   if (view === 'mine') renderList();
@@ -510,13 +533,13 @@ function renderList(){
 }
 
 /* ---------- 追加・編集 ---------- */
-let editing = null, pendingBlob = null, pendingHeading = null, pickMap = null, pickMarker = null;
+let editing = null, pendingBlob = null, pendingHeading = null, pendingPitch = null, pickMap = null, pickMarker = null, pickCone = null, pickMode = 'loc';
 function openEdit(p){
-  editing = p || null; pendingBlob = null; pendingHeading = p?.heading ?? null;
+  editing = p || null; pendingBlob = null; pendingHeading = p?.heading ?? null; pendingPitch = p?.pitch ?? null; pickMode = 'loc';
   $('editTitle').textContent = p ? '写真を編集' : '写真を追加';
   $('fTitle').value = p?.title || ''; $('fYear').value = p?.year || ''; $('fNote').value = p?.note || '';
   $('fLatLng').value = p?.lat != null ? `${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}` : '';
-  $('headVal').textContent = pendingHeading != null ? `方角 ${Math.round(pendingHeading)}°` : '';
+  showHeading();
   $('pickImg').hidden = !p; $('pickLabel').hidden = !!p;
   if (p) $('pickImg').src = urlFor(p);
   $('file').value = '';
@@ -529,20 +552,43 @@ function openEdit(p){
   if (!pickMap){
     pickMap = L.map('pickMap', {attributionControl:false}).setView([36.2, 138.25], 5);
     tiles().addTo(pickMap);
-    pickMap.on('click', e => setPick(e.latlng.lat, e.latlng.lng, false));
+    pickMap.on('click', e => {
+      if (pickMode === 'dir' && pickMarker){
+        const m = pickMarker.getLatLng();
+        pendingHeading = bearing({lat:m.lat, lng:m.lng}, {lat:e.latlng.lat, lng:e.latlng.lng}); pendingPitch = null;
+        pickMode = 'loc'; $('dirBtn').classList.remove('primary'); showHeading(); drawCone();
+      } else setPick(e.latlng.lat, e.latlng.lng, false);
+    });
   }
   setTimeout(() => {
     pickMap.invalidateSize();
     const ll = parseLatLng($('fLatLng').value);
     if (ll) setPick(ll.lat, ll.lng, true);
-    else { pickMarker?.remove(); pickMarker = null; const c = here || map.getCenter(); pickMap.setView([c.lat, c.lng], here ? 16 : map.getZoom()); }
+    else { pickMarker?.remove(); pickMarker = null; pickCone?.remove(); pickCone = null; const c = here || map.getCenter(); pickMap.setView([c.lat, c.lng], here ? 16 : map.getZoom()); }
   }, 0);
 }
+function showHeading(){ $('headVal').textContent = pendingHeading != null ? `向き：${dirName(pendingHeading)}（${Math.round(pendingHeading)}°）` : '向き：未登録'; }
+// 地図に「写っている方向」を扇形で描く
+function drawCone(){
+  pickCone?.remove(); pickCone = null;
+  if (!pickMarker || pendingHeading == null) return;
+  const c = pickMarker.getLatLng(), pts = [[c.lat, c.lng]];
+  for (let a = -H_FOV/2; a <= H_FOV/2; a += 5){
+    const b = (pendingHeading + a) * Math.PI / 180, d = 60;
+    pts.push([c.lat + d*Math.cos(b)/111320, c.lng + d*Math.sin(b)/(111320*Math.cos(c.lat*Math.PI/180))]);
+  }
+  pickCone = L.polygon(pts, {color:'#e0a84f', weight:1, fillColor:'#e0a84f', fillOpacity:.25, interactive:false}).addTo(pickMap);
+}
+$('dirBtn').onclick = () => {
+  if (!pickMarker) return toast('先に撮影場所を地図でタップしてください');
+  pickMode = 'dir'; $('dirBtn').classList.add('primary'); toast('写真に写っている方向を地図でタップしてください');
+};
 function setPick(lat, lng, center){
   $('fLatLng').value = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
   if (!pickMarker) pickMarker = L.circleMarker([lat, lng], {radius:9, color:'#2a1d08', weight:2, fillColor:'#e0a84f', fillOpacity:1}).addTo(pickMap);
   else pickMarker.setLatLng([lat, lng]);
   if (center) pickMap.setView([lat, lng], Math.max(pickMap.getZoom(), 16));
+  drawCone();
 }
 $('fLatLng').onchange = () => { const ll = parseLatLng($('fLatLng').value); if (ll) setPick(ll.lat, ll.lng, true); };
 $('fPublic').onchange = () => { $('rightsRow').hidden = !$('fPublic').checked; };
@@ -556,6 +602,7 @@ $('file').onchange = async e => {
 };
 $('hereBtn').onclick = () => {
   if (!navigator.geolocation) return toast('この端末では位置情報が使えません');
+  if (here && here.acc <= 50){ setPick(here.lat, here.lng, true); return toast(`記録しました（誤差 ±${Math.round(here.acc)} m）`); }
   toast('現在地を取得中…');
   navigator.geolocation.getCurrentPosition(p => {
     setPick(p.coords.latitude, p.coords.longitude, true);
@@ -566,7 +613,7 @@ $('headBtn').onclick = async () => {
   if (!await startOrientation()) return toast('方角センサーを使えませんでした');
   setTimeout(() => {
     if (heading == null) return toast('方角を取得できませんでした');
-    pendingHeading = heading; $('headVal').textContent = `方角 ${Math.round(heading)}°`;
+    pendingHeading = heading; pendingPitch = pitch; showHeading(); drawCone();
   }, 400);
 };
 $('delBtn').onclick = async () => {
@@ -596,7 +643,7 @@ $('form').onsubmit = async e => {
     id: editing?.id || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()),
     created: editing?.created || Date.now(),
     title: $('fTitle').value.trim(), year: $('fYear').value.trim(), note: $('fNote').value.trim(),
-    blob, lat: ll?.lat ?? null, lng: ll?.lng ?? null, heading: pendingHeading,
+    blob, lat: ll?.lat ?? null, lng: ll?.lng ?? null, heading: pendingHeading, pitch: pendingPitch,
     align: pendingBlob ? null : editing?.align || null,
     layers: pendingBlob ? [] : editing?.layers || [],
     baseOn: pendingBlob ? true : editing?.baseOn ?? true,
@@ -647,7 +694,12 @@ async function openShared(s){
 }
 
 async function openAr(p){
-  cur = p; show('ar');
+  stopLook(); show('ar'); old.hidden = false;
+  await setCurrent(p);
+  startCam();
+}
+async function setCurrent(p){
+  cur = p;
   $('arTitle').textContent = p.title; $('arDist').textContent = p.year || '';
   $('credit').hidden = p.kind !== 'shared';
   const mine = p.kind === 'local' || (p.uid && p.uid === myId);
@@ -659,9 +711,13 @@ async function openAr(p){
   A = {x:saved.x ?? 0, y:saved.y ?? 0, s:saved.s ?? 1, r:saved.r ?? 0};
   mode = saved.mode || 'fade'; mix = saved.mix ?? 60; locked = false;
   $('mix').value = mix; setMode(mode); $('lockBtn').classList.remove('on');
-  bgImg.hidden = true; video.hidden = false; $('camErr').hidden = true;
+  $('followBtn').classList.toggle('on', follow && p.heading != null);
   startOrientation();
   updateGuide(); apply();
+}
+async function startCam(){
+  if (stream) return;
+  bgImg.hidden = true; video.hidden = false; $('camErr').hidden = true;
   try{
     stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}, width:{ideal:1920}, height:{ideal:1080}}, audio:false});
     video.srcObject = stream; await video.play().catch(() => {});
@@ -687,11 +743,11 @@ async function saveAlign(){
     }
   }
 }
-async function closeAr(){ stopCam(); await saveAlign(); backToTab(); }
+async function closeAr(){ stopLook(); stopCam(); await saveAlign(); cur = null; backToTab(); }
 $('closeAr').onclick = closeAr;
 $('arAction').onclick = async () => {
   const btn = $('arAction');
-  if (cur.kind === 'local'){ stopCam(); await saveAlign(); openEdit(photos.find(x => x.id === cur.id)); return; }
+  if (cur.kind === 'local'){ stopLook(); stopCam(); await saveAlign(); openEdit(photos.find(x => x.id === cur.id)); return; }
   if (btn.dataset.armed !== '1'){ btn.dataset.armed = '1'; btn.textContent = btn.textContent === '報告' ? '不適切として報告？' : '本当に取り下げる？'; return; }
   try{
     if (cur.uid === myId){
@@ -713,16 +769,24 @@ function baseSize(){
   const k = Math.min(W/iw, H/ih);
   return {w: iw*k, h: ih*k};
 }
+let follow = true;
+// 方角と傾きから、写真を景色に貼り付けるためのずらし量（画面px）
+function sensorOff(){
+  if (!follow || !cur || cur.heading == null || heading == null) return {x:0, y:0};
+  const ppd = innerWidth / H_FOV;
+  return {x: wrap(cur.heading - heading) * ppd, y: pitch == null ? 0 : Math.max(-90, Math.min(90, pitch - (cur.pitch ?? 90))) * ppd};
+}
 function apply(){
-  const b = baseSize();
+  if (!ov) return;
+  const b = baseSize(), o = sensorOff(), X = A.x + o.x, Y = A.y + o.y;
   old.style.width = b.w + 'px'; old.style.height = b.h + 'px';
-  old.style.transform = `translate(-50%,-50%) translate(${A.x}px,${A.y}px) rotate(${A.r}deg) scale(${A.s})`;
+  old.style.transform = `translate(-50%,-50%) translate(${X}px,${Y}px) rotate(${A.r}deg) scale(${A.s})`;
   if (mode === 'fade'){
     old.style.opacity = mix/100; old.style.clipPath = 'none'; $('wipeLine').hidden = true;
   } else {
     old.style.opacity = 1;
     const lineX = innerWidth * mix/100;
-    const left = innerWidth/2 + A.x - b.w*A.s/2;
+    const left = innerWidth/2 + X - b.w*A.s/2;
     const visibleW = Math.max(0, Math.min(b.w*A.s, lineX - left));
     old.style.clipPath = `inset(0 ${100 - visibleW / (b.w*A.s) * 100}% 0 0)`;
     $('wipeLine').hidden = false; $('wipeLine').style.left = lineX + 'px';
@@ -740,8 +804,14 @@ $('mix').oninput = e => { mix = +e.target.value; apply(); };
 $('lockBtn').onclick = () => { locked = !locked; $('lockBtn').classList.toggle('on', locked); toast(locked ? '位置をロックしました' : 'ロックを解除しました'); };
 $('resetBtn').onclick = () => { if (moveTarget){ moveTarget.dx = moveTarget.dy = 0; moveTarget.s = 1; compose(); return; } A = {x:0, y:0, s:1, r:0}; apply(); };
 addEventListener('resize', () => { if (!$('ar').hidden) apply(); });
+$('followBtn').onclick = () => {
+  if (cur?.heading == null) return toast('この写真には向きが記録されていません（編集で「地図で向きを指定」）');
+  follow = !follow; $('followBtn').classList.toggle('on', follow); apply();
+  toast(follow ? '写真を景色に貼り付けて動かします' : '写真を画面に固定しました');
+};
 
 function updateGuide(){
+  if (lookMode) return;
   const g = $('guide');
   if (!cur){ g.hidden = true; return; }
   let parts = [];
@@ -800,7 +870,7 @@ $('shot').onclick = async () => {
   g.save();
   if (mode === 'wipe'){ g.beginPath(); g.rect(0, 0, W*mix/100, H); g.clip(); }
   else g.globalAlpha = mix/100;
-  g.translate(W/2 + A.x, H/2 + A.y); g.rotate(A.r*Math.PI/180); g.scale(A.s, A.s);
+  const o = sensorOff(); g.translate(W/2 + A.x + o.x, H/2 + A.y + o.y); g.rotate(A.r*Math.PI/180); g.scale(A.s, A.s);
   g.drawImage(old, -b.w/2, -b.h/2, b.w, b.h);
   g.restore();
   const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', .92));
@@ -810,6 +880,89 @@ $('shot').onclick = async () => {
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click();
   toast('画像を保存しました');
 };
+
+/* ---------- かざすモード：写真を選ばず、カメラを向けるだけで昔の風景が出る ---------- */
+let lookMode = false, lookTimer = null, lookBusy = false, lastNear = null;
+const sharedBlobs = new Map();
+function candidates(){
+  const mineShared = new Set(photos.map(p => p.sharedId).filter(Boolean));
+  return [
+    ...photos.filter(p => p.lat != null).map(p => ({...p, kind:'local'})),
+    ...[...spots.values()].map(x => x.data).filter(s => !mineShared.has(s.id)).map(s => ({...s, kind:'shared'})),
+  ];
+}
+async function sharedBlob(id){
+  if (sharedBlobs.has(id)) return sharedBlobs.get(id);
+  const {fs, db} = fb, d = await fs.getDoc(fs.doc(db, 'images', id));
+  if (!d.exists()) return null;
+  const b = await (await fetch(d.data().data)).blob();
+  sharedBlobs.set(id, b); return b;
+}
+async function loadSpotsNear(c){
+  if (!fb) return;
+  const d = .01, {fs, db} = fb;   // 約1km四方
+  const snap = await fs.getDocs(fs.query(fs.collection(db, 'spots'), fs.where('lat', '>=', c.lat - d), fs.where('lat', '<=', c.lat + d), fs.limit(200)));
+  snap.forEach(doc => { const s = {id:doc.id, ...doc.data()}; if (Math.abs(s.lng - c.lng) < d * 1.3) addSpot(s); });
+}
+function setGuide(t){ $('guide').textContent = t; $('guide').hidden = !t; }
+async function startLook(){
+  const sensors = startOrientation();   // iPhone はボタンを押した直後でないと方角の許可を出せない
+  lookMode = true; cur = null; ov = null; follow = true; lastNear = null;
+  show('ar'); old.hidden = true; $('parts').hidden = true; $('credit').hidden = true; $('arAction').hidden = true;
+  $('arTitle').textContent = '昔の風景を探しています…'; $('arDist').textContent = '';
+  startCam();
+  if (!await sensors) toast('方角センサーを使えないため、写真は画面の中央に出ます');
+  lookTick(); lookTimer = setInterval(lookTick, 800);
+}
+function stopLook(){ if (!lookMode) return; lookMode = false; clearInterval(lookTimer); $('arAction').hidden = false; }
+async function hideLook(){ if (cur){ await saveAlign(); cur = null; } old.hidden = true; $('arAction').hidden = true; }
+async function lookTick(){
+  if (!lookMode || lookBusy) return;
+  lookBusy = true;
+  try{
+    if (!here){ setGuide('現在地を探しています…（位置情報を許可してください）'); return; }
+    if (fb && (!lastNear || haversine(lastNear, here) > 300)){ lastNear = {...here}; loadSpotsNear(here).catch(() => {}); }
+    const list = candidates().map(c => ({c, d:haversine(here, c)})).filter(x => x.d < 2000).sort((a, b) => a.d - b.d);
+    if (!list.length){
+      await hideLook();
+      $('arTitle').textContent = '近くに昔の写真がありません'; $('arDist').textContent = '';
+      setGuide('「＋ 追加」で写真を登録するか、地図で写真のある場所を探してください');
+      return;
+    }
+    const R = Math.max(40, Math.min(80, here.acc || 0));        // GPS の誤差を見込んだ「その場所にいる」範囲
+    const near = list.filter(x => x.d <= R);
+    if (near.length){
+      // その場所の写真のうち、今向いている方向に一番近いものを出す
+      const ang = x => x.c.heading == null || heading == null ? 90 : Math.abs(wrap(x.c.heading - heading));
+      let best = near.reduce((a, b) => ang(b) < ang(a) ? b : a);
+      const keep = cur && near.find(x => x.c.id === cur.id);
+      if (keep && ang(keep) <= ang(best) + 20) best = keep;          // 切り替わりのちらつき防止
+      if (!cur || best.c.id !== cur.id){
+        if (cur) await saveAlign();
+        let p;
+        if (best.c.kind === 'shared'){
+          const blob = await sharedBlob(best.c.id);
+          if (!blob){ removeSpot(best.c.id); return; }
+          p = {...best.c, blob, align:lsGet('align:' + best.c.id)};
+        } else p = {...photos.find(x => x.id === best.c.id), kind:'local'};
+        await setCurrent(p);
+        toast(`${p.title}${p.year ? '（' + p.year + '）' : ''}`);
+      }
+      old.hidden = false; $('arAction').hidden = false;
+      const a = cur.heading == null || heading == null ? 0 : wrap(cur.heading - heading);
+      setGuide(cur.heading == null ? 'この写真は向きが未登録です。指で位置を合わせてください'
+        : Math.abs(a) > H_FOV * .6 ? (a > 0 ? `→ 右を向くと昔の風景（あと${Math.round(a)}°）` : `← 左を向くと昔の風景（あと${Math.round(-a)}°）`) : '');
+      $('arDist').textContent = [cur.year, near.length > 1 ? `ここで見られる写真 ${near.length}枚` : '', `±${Math.round(here.acc || 0)}m`].filter(Boolean).join(' ・ ');
+    } else {
+      await hideLook();
+      const t = list[0], diff = heading == null ? null : wrap(bearing(here, t.c) - heading);
+      const arrow = diff == null ? '' : Math.abs(diff) < 20 ? '↑ まっすぐ' : diff > 0 ? `→ 右へ${Math.round(diff)}°` : `← 左へ${Math.round(-diff)}°`;
+      $('arTitle').textContent = '昔の風景のある場所へ'; $('arDist').textContent = `「${t.c.title}」${t.c.year ? '・' + t.c.year : ''}`;
+      setGuide(`${arrow}　あと ${fmtDist(t.d)}`);
+    }
+  } finally { lookBusy = false; }
+}
+$('lookBtn').onclick = startLook;
 
 /* ---------- 部品（レイヤー） ----------
    重い処理は「開いたとき1回」と「タップ1回ごとに1回」だけ。カメラ表示中は毎フレーム計算しない。 */
@@ -917,7 +1070,7 @@ $('partsChip').onclick = () => {
   renderParts(); $('parts').hidden = false;
 };
 $('partsClose').onclick = () => { $('parts').hidden = true; };
-$('partsEdit').onclick = async () => { stopCam(); await saveAlign(); openCut(photos.find(x => x.id === cur.id), 'ar'); };
+$('partsEdit').onclick = async () => { stopLook(); stopCam(); await saveAlign(); openCut(photos.find(x => x.id === cur.id), 'ar'); };
 $('partsBtn').onclick = () => openCut(editing, 'edit');
 
 /* ---------- 切り抜き画面 ---------- */
