@@ -1,0 +1,763 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#14181f">
+<title>トキカサネ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@600;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<style>
+/* 暗室のような単一テーマ。銀塩プリントの灰と、定着液の琥珀をアクセントに */
+:root{
+  --ink:#14181f; --panel:#1d232d; --line:#2e3644; --silver:#c9cdd3; --dim:#8a93a1;
+  --amber:#e0a84f; --amber-ink:#2a1d08; --danger:#e07a6a;
+  --tab-h:58px;
+  --f-display:"Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif;
+  --f-body:"Zen Kaku Gothic New","Hiragino Sans","Noto Sans JP",system-ui,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--ink);color:var(--silver);font-family:var(--f-body);font-size:15px;line-height:1.7;-webkit-tap-highlight-color:transparent}
+button,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+[hidden]{display:none!important}
+
+.wrap{max-width:640px;margin:0 auto;padding-block:calc(env(safe-area-inset-top,0px) + 20px) calc(env(safe-area-inset-bottom,0px) + var(--tab-h) + 96px);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header.top{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:20px}
+h1{font-family:var(--f-display);font-weight:800;font-size:30px;letter-spacing:.06em;margin:0;color:#eef0f3}
+h1 small{display:block;font-family:var(--f-body);font-weight:400;font-size:12px;letter-spacing:.1em;color:var(--dim)}
+.loc{font-size:12px;color:var(--dim);text-align:right;font-variant-numeric:tabular-nums}
+h2{font-family:var(--f-display);font-size:20px;margin:0 0 16px;color:#eef0f3}
+
+/* タブ */
+.tabs{position:fixed;left:0;right:0;bottom:0;z-index:900;display:grid;grid-template-columns:1fr 1fr;background:var(--panel);border-top:1px solid var(--line);padding:0 env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)}
+.tabs button{height:var(--tab-h);background:none;border:0;color:var(--dim);font-size:13px;letter-spacing:.08em}
+.tabs button[aria-selected=true]{color:var(--amber);font-weight:700;box-shadow:inset 0 2px 0 var(--amber)}
+
+/* 地図 */
+#mapView{position:fixed;left:0;right:0;top:0;bottom:calc(var(--tab-h) + env(safe-area-inset-bottom,0px))}
+#map{position:absolute;inset:0;background:#232a35}
+.map-head{position:absolute;z-index:500;top:calc(env(safe-area-inset-top,0px) + 10px);left:max(10px,env(safe-area-inset-left,0px));right:max(10px,env(safe-area-inset-right,0px));display:flex;justify-content:space-between;align-items:flex-start;gap:8px;pointer-events:none}
+.map-head > *{pointer-events:auto}
+.brand{background:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 12px;font-family:var(--f-display);font-weight:800;color:#eef0f3;letter-spacing:.06em;line-height:1.3}
+.brand small{display:block;font-family:var(--f-body);font-weight:400;font-size:11px;color:var(--dim);letter-spacing:.04em}
+#mapNote{position:absolute;z-index:500;left:50%;transform:translateX(-50%);bottom:84px;background:var(--ink);border:1px solid var(--line);border-radius:6px;padding:8px 14px;font-size:13px;max-width:calc(100% - 32px);text-align:center}
+.pin{width:46px;height:46px;border-radius:50%;border:3px solid var(--amber);background:#000 center/cover;box-shadow:0 2px 10px #000a}
+.pin.mine{border-color:#fff}
+.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:var(--ink);color:var(--silver);border:1px solid var(--line)}
+.leaflet-popup-content{margin:12px;width:220px!important}
+.leaflet-container a.leaflet-popup-close-button{color:var(--dim)}
+.pop img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:3px;display:block;filter:sepia(.2)}
+.pop b{display:block;font-size:15px;color:#eef0f3;margin-top:8px;line-height:1.4}
+.pop span{display:block;font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
+.pop .btn{width:100%;margin-top:10px}
+.leaflet-control-attribution{font-size:10px}
+
+.list{display:grid;gap:12px}
+.item{display:grid;grid-template-columns:96px 1fr;gap:14px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:10px;text-align:left;width:100%}
+.item img{width:96px;height:72px;object-fit:cover;border-radius:3px;filter:sepia(.25) contrast(1.05);background:#000}
+.item .t{font-weight:700;color:#eef0f3;font-size:16px;line-height:1.4}
+.item .m{font-size:12px;color:var(--dim);display:flex;gap:10px;flex-wrap:wrap;font-variant-numeric:tabular-nums}
+.item .near{color:var(--amber);font-weight:700}
+.badge{border:1px solid var(--amber);color:var(--amber);border-radius:3px;padding:0 6px;font-size:11px}
+.item > div{min-width:0}
+
+.empty{border:1px dashed var(--line);border-radius:6px;padding:24px 20px;color:var(--dim)}
+.empty b{color:var(--silver)}
+.empty ol{padding-left:1.3em;margin:8px 0 0}
+
+.fab{position:fixed;z-index:800;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + var(--tab-h) + 16px);background:var(--amber);color:var(--amber-ink);border:0;border-radius:999px;padding:13px 24px;font-weight:700;box-shadow:0 6px 24px #0008;white-space:nowrap}
+
+form{display:grid;gap:16px}
+label.f{display:grid;gap:6px;font-size:13px;color:var(--dim)}
+input[type=text],textarea{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:10px 12px;width:100%}
+.pick{display:grid;place-items:center;aspect-ratio:4/3;max-width:100%;background:var(--panel);border:1px dashed var(--line);border-radius:6px;overflow:hidden;color:var(--dim);position:relative}
+.pick img{width:100%;height:100%;object-fit:contain;background:#000}
+.pick input{position:absolute;inset:0;opacity:0;cursor:pointer}
+#pickMap{height:220px;border-radius:6px;border:1px solid var(--line)}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.btn{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:9px 14px}
+.btn.primary{background:var(--amber);color:var(--amber-ink);border-color:var(--amber);font-weight:700}
+.btn.danger{color:var(--danger)}
+.btn:disabled{opacity:.5}
+.hint{font-size:12px;color:var(--dim);margin:0}
+.share{border:1px solid var(--line);border-radius:6px;padding:14px;display:grid;gap:10px}
+.check{display:flex;gap:10px;align-items:flex-start;font-size:14px}
+.check input{margin-top:5px;accent-color:var(--amber);width:18px;height:18px;flex:none}
+
+/* AR画面 */
+#ar{position:fixed;inset:0;z-index:1000;background:#000;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none}
+#stage{position:absolute;inset:0}
+#bgVideo,#bgImg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+#old{position:absolute;left:50%;top:50%;max-width:none;transform-origin:center;pointer-events:none;will-change:transform,opacity,clip-path}
+#wipeLine{position:absolute;top:0;bottom:0;width:2px;background:var(--amber);box-shadow:0 0 8px #000;pointer-events:none}
+.ar-top{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:calc(env(safe-area-inset-top,0px) + 10px) max(12px,env(safe-area-inset-right,0px)) 30px max(12px,env(safe-area-inset-left,0px));background:linear-gradient(#000a,#0000)}
+.ar-title{min-width:0}
+.ar-title b{display:block;font-family:var(--f-display);font-size:17px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ar-title span{font-size:12px;color:#ddd;font-variant-numeric:tabular-nums}
+.chip{background:#000a;border:1px solid #fff3;color:#fff;border-radius:999px;padding:7px 14px;font-size:13px;white-space:nowrap}
+.chip.on{background:var(--amber);color:var(--amber-ink);border-color:var(--amber)}
+#guide{position:absolute;left:50%;top:calc(env(safe-area-inset-top,0px) + 70px);transform:translateX(-50%);background:#000b;color:#fff;border-radius:6px;padding:6px 12px;font-size:13px;white-space:nowrap}
+.ar-bottom{position:absolute;left:0;right:0;bottom:0;padding:36px max(14px,env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 14px) max(14px,env(safe-area-inset-left,0px));background:linear-gradient(#0000,#000c);display:grid;gap:12px}
+.slider{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;font-size:12px;color:#ddd}
+input[type=range]{width:100%;accent-color:var(--amber);height:28px}
+.ar-btns{display:flex;gap:8px;justify-content:space-between;align-items:center}
+.ar-btns .row{gap:6px}
+.shutter{width:58px;height:58px;border-radius:50%;border:4px solid #fff;background:#fff3;flex:none}
+#camErr{position:absolute;inset:0;display:grid;place-items:center;padding:24px;text-align:center;color:#ddd}
+#camErr .box{max-width:340px;display:grid;gap:12px}
+#credit{position:absolute;right:max(12px,env(safe-area-inset-right,0px));top:calc(env(safe-area-inset-top,0px) + 56px);font-size:11px;color:#ddd;text-shadow:0 1px 2px #000}
+#toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 140px);transform:translateX(-50%);background:#000d;color:#fff;padding:8px 16px;border-radius:999px;font-size:13px;z-index:2000;pointer-events:none;max-width:calc(100% - 32px);text-align:center}
+</style>
+</head>
+<body>
+
+<!-- みんなの地図 -->
+<section id="mapView">
+  <div id="map"></div>
+  <div class="map-head">
+    <div class="brand">トキカサネ<small>昔の写真を、今の町にかさねる</small></div>
+    <button class="btn" id="locateBtn">現在地</button>
+  </div>
+  <div id="mapNote" hidden></div>
+</section>
+
+<!-- わたしの写真 -->
+<section id="mine" class="wrap" hidden>
+  <header class="top">
+    <h1>わたしの写真<small>この端末に保存した写真</small></h1>
+    <div class="loc" id="locStatus">現在地を取得中…</div>
+  </header>
+  <div id="list" class="list"></div>
+  <div id="empty" class="empty" hidden>
+    <b>まだ写真がありません。</b>
+    <ol>
+      <li>「写真を追加」から古い写真を選ぶ</li>
+      <li>地図をタップするか「今いる場所」で撮影場所を記録</li>
+      <li>写真をタップしてカメラを町に向け、指で位置と大きさを合わせる</li>
+    </ol>
+  </div>
+</section>
+
+<nav class="tabs" id="tabs" role="tablist">
+  <button role="tab" id="tabMap" aria-selected="true">みんなの地図</button>
+  <button role="tab" id="tabMine" aria-selected="false">わたしの写真</button>
+</nav>
+<button class="fab" id="addBtn">＋ 写真を追加</button>
+
+<!-- 追加・編集 -->
+<section id="edit" class="wrap" hidden>
+  <h2 id="editTitle">写真を追加</h2>
+  <form id="form">
+    <div class="pick"><span id="pickLabel">タップして古い写真を選ぶ</span><img id="pickImg" alt="" hidden><input type="file" id="file" accept="image/*"></div>
+    <label class="f">タイトル<input type="text" id="fTitle" placeholder="例：駅前通り 商店街" maxlength="60" required></label>
+    <label class="f">年代<input type="text" id="fYear" placeholder="例：1964年ごろ" maxlength="30"></label>
+    <div class="f" style="display:grid;gap:6px;font-size:13px;color:var(--dim)">撮影場所（地図をタップ）
+      <div id="pickMap"></div>
+      <input type="text" id="fLatLng" placeholder="35.6812, 139.7671（Googleマップの座標を貼ってもOK）" inputmode="decimal" aria-label="緯度と経度">
+    </div>
+    <div class="row">
+      <button type="button" class="btn" id="hereBtn">今いる場所</button>
+      <button type="button" class="btn" id="headBtn">今向いている方角も記録</button>
+      <span class="hint" id="headVal"></span>
+    </div>
+    <label class="f">メモ<textarea id="fNote" rows="2" maxlength="500" placeholder="出典や思い出など"></textarea></label>
+    <div class="share" id="shareBox">
+      <label class="check"><input type="checkbox" id="fPublic"> <span>みんなの地図に公開する<br><span class="hint">誰でも見られるようになります。撮影場所の記録が必要です。</span></span></label>
+      <label class="check" id="rightsRow" hidden><input type="checkbox" id="fRights"> <span>自分で撮った写真か、公開してよいと確認した写真です<br><span class="hint">人の顔がはっきり写った写真や、他人の著作物は避けてください。</span></span></label>
+    </div>
+    <div class="row">
+      <button type="submit" class="btn primary" id="saveBtn">保存</button>
+      <button type="button" class="btn" id="cancelBtn">戻る</button>
+      <button type="button" class="btn danger" id="delBtn" hidden>削除</button>
+    </div>
+  </form>
+</section>
+
+<!-- AR -->
+<section id="ar" hidden>
+  <div id="stage">
+    <video id="bgVideo" playsinline muted autoplay></video>
+    <img id="bgImg" alt="" hidden>
+    <img id="old" alt="">
+    <div id="wipeLine" hidden></div>
+  </div>
+  <div id="camErr" hidden>
+    <div class="box">
+      <p id="camErrMsg">カメラを使えませんでした。</p>
+      <label class="btn primary" style="position:relative">今の景色を撮影して重ねる<input type="file" id="snap" accept="image/*" capture="environment" style="position:absolute;inset:0;opacity:0"></label>
+    </div>
+  </div>
+  <div class="ar-top">
+    <div class="ar-title"><b id="arTitle"></b><span id="arDist"></span></div>
+    <div class="row" style="flex-wrap:nowrap">
+      <button class="chip" id="arAction"></button>
+      <button class="chip" id="closeAr">閉じる</button>
+    </div>
+  </div>
+  <div id="credit" hidden>みんなの投稿</div>
+  <div id="guide" hidden></div>
+  <div class="ar-bottom">
+    <div class="slider"><span id="sLeft">今</span><input type="range" id="mix" min="0" max="100" value="60" aria-label="昔と今の割合"><span id="sRight">昔</span></div>
+    <div class="ar-btns">
+      <div class="row">
+        <button class="chip on" id="modeFade">すかし</button>
+        <button class="chip" id="modeWipe">ワイプ</button>
+        <button class="chip" id="lockBtn">ロック</button>
+        <button class="chip" id="resetBtn">戻す</button>
+      </div>
+      <button class="shutter" id="shot" aria-label="重ねた写真を保存"></button>
+    </div>
+  </div>
+</section>
+
+<div id="toast" hidden></div>
+
+<script type="module">
+// config.js が無くても動く（その場合は「みんなの地図」がオフ）。index.html 1ファイルだけで公開できる
+let firebaseConfig = null;
+try { ({ firebaseConfig } = await import('./config.js')); } catch {}
+const $ = id => document.getElementById(id);
+
+/* ---------- この端末の保存（IndexedDB） ---------- */
+let dbp;
+function idb(){
+  return dbp ||= new Promise((res, rej) => {
+    const r = indexedDB.open('tokikasane', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('photos', {keyPath:'id'});
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+async function tx(mode, fn){
+  const d = await idb();
+  return new Promise((res, rej) => {
+    const t = d.transaction('photos', mode), r = fn(t.objectStore('photos'));
+    t.oncomplete = () => res(r && r.result);
+    t.onerror = () => rej(t.error);
+  });
+}
+const allPhotos = () => tx('readonly', s => s.getAll());
+const putPhoto = p => tx('readwrite', s => s.put(p));
+const delPhoto = id => tx('readwrite', s => s.delete(id));
+const lsGet = k => { try{ return JSON.parse(localStorage.getItem(k)); }catch{ return null; } };
+const lsSet = (k, v) => { try{ localStorage.setItem(k, JSON.stringify(v)); }catch{} };
+
+/* ---------- Firebase（みんなの地図） ---------- */
+const FB_VER = '10.14.1';
+let fb = null;
+async function initFb(){
+  if (!firebaseConfig) return null;
+  const base = `https://www.gstatic.com/firebasejs/${FB_VER}/`;
+  const [app, fs, au] = await Promise.all([import(base + 'firebase-app.js'), import(base + 'firebase-firestore.js'), import(base + 'firebase-auth.js')]);
+  const a = app.initializeApp(firebaseConfig);
+  const db = fs.getFirestore(a), auth = au.getAuth(a);
+  if (new URLSearchParams(location.search).has('emulator')){
+    fs.connectFirestoreEmulator(db, location.hostname, 8080);
+    au.connectAuthEmulator(auth, `http://${location.hostname}:9099`, {disableWarnings:true});
+  }
+  fb = {db, auth, fs, au};
+  return fb;
+}
+async function myUid(){
+  await fb.auth.authStateReady();
+  if (!fb.auth.currentUser) await fb.au.signInAnonymously(fb.auth);   // 登録不要の匿名ログイン
+  return myId = fb.auth.currentUser.uid;
+}
+async function currentUidIfAny(){ if (!fb) return null; await fb.auth.authStateReady(); return fb.auth.currentUser?.uid || null; }
+
+// 画像を文字列（data URL）にして、指定サイズ未満に収める
+async function toDataURL(blob, maxSide, maxLen, q = .85){
+  const bmp = await createImageBitmap(blob);
+  let side = maxSide;
+  for (let i = 0; i < 8; i++){
+    const k = Math.min(1, side / Math.max(bmp.width, bmp.height));
+    const c = document.createElement('canvas'); c.width = Math.round(bmp.width*k); c.height = Math.round(bmp.height*k);
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    const url = c.toDataURL('image/jpeg', q);
+    if (url.length < maxLen) return url;
+    if (q > .6) q -= .1; else side = Math.round(side * .8);
+  }
+  throw new Error('画像を小さくできませんでした');
+}
+
+async function publish(p){
+  const {fs, db} = fb, uid = await myUid();
+  const [data, thumb] = await Promise.all([toDataURL(p.blob, 1600, 850000), toDataURL(p.blob, 240, 50000, .7)]);
+  const ref = fs.doc(fs.collection(db, 'spots'));
+  const b = fs.writeBatch(db);
+  b.set(ref, {title:p.title, year:p.year, note:p.note, lat:p.lat, lng:p.lng, heading:p.heading ?? null, thumb, uid, created:fs.serverTimestamp()});
+  b.set(fs.doc(db, 'images', ref.id), {data, uid});
+  await b.commit();
+  addSpot({id:ref.id, title:p.title, year:p.year, note:p.note, lat:p.lat, lng:p.lng, heading:p.heading ?? null, thumb, uid});
+  return ref.id;
+}
+async function unpublish(id){
+  const {fs, db} = fb, b = fs.writeBatch(db);
+  b.delete(fs.doc(db, 'images', id)); b.delete(fs.doc(db, 'spots', id));
+  await b.commit();
+  removeSpot(id);
+}
+async function report(id){
+  const {fs, db} = fb, uid = await myUid();
+  await fs.setDoc(fs.doc(db, 'spots', id, 'reports', uid), {reason:'不適切な写真', created:fs.serverTimestamp()});
+}
+
+/* ---------- 位置と方角 ---------- */
+let here = null, heading = null;
+function haversine(a, b){
+  const R = 6371000, rad = x => x*Math.PI/180;
+  const dLat = rad(b.lat-a.lat), dLng = rad(b.lng-a.lng);
+  const h = Math.sin(dLat/2)**2 + Math.cos(rad(a.lat))*Math.cos(rad(b.lat))*Math.sin(dLng/2)**2;
+  return 2*R*Math.asin(Math.sqrt(h));
+}
+function bearing(a, b){
+  const rad = x => x*Math.PI/180;
+  const y = Math.sin(rad(b.lng-a.lng))*Math.cos(rad(b.lat));
+  const x = Math.cos(rad(a.lat))*Math.sin(rad(b.lat)) - Math.sin(rad(a.lat))*Math.cos(rad(b.lat))*Math.cos(rad(b.lng-a.lng));
+  return (Math.atan2(y, x)*180/Math.PI + 360) % 360;
+}
+const fmtDist = m => m < 1000 ? `${Math.round(m)} m` : `${(m/1000).toFixed(m < 10000 ? 1 : 0)} km`;
+
+let firstFix = true;
+if ('geolocation' in navigator){
+  navigator.geolocation.watchPosition(p => {
+    here = {lat:p.coords.latitude, lng:p.coords.longitude, acc:p.coords.accuracy};
+    $('locStatus').textContent = `現在地 ±${Math.round(here.acc)} m`;
+    hereMarker.setLatLng([here.lat, here.lng]).addTo(map);
+    if (firstFix){ firstFix = false; map.setView([here.lat, here.lng], 16); }
+    if (!$('mine').hidden) renderList();
+    if (!$('ar').hidden) updateGuide();
+  }, () => { $('locStatus').textContent = '位置情報オフ'; }, {enableHighAccuracy:true, maximumAge:5000});
+} else $('locStatus').textContent = '位置情報なし';
+
+let orientationOn = false;
+async function startOrientation(){
+  if (orientationOn) return true;
+  try{
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function'){
+      if (await DeviceOrientationEvent.requestPermission() !== 'granted') return false;
+    }
+  }catch{ return false; }
+  const onO = e => {
+    let h = null;
+    if (typeof e.webkitCompassHeading === 'number') h = e.webkitCompassHeading;   // iOS
+    else if (e.absolute && e.alpha != null) h = (360 - e.alpha) % 360;           // Android
+    if (h != null){ heading = h; if (!$('ar').hidden) updateGuide(); }
+  };
+  addEventListener('deviceorientationabsolute', onO);
+  addEventListener('deviceorientation', onO);
+  orientationOn = true;
+  return true;
+}
+
+/* ---------- 画面切り替え ---------- */
+let tab = 'map';
+function show(view){
+  // view: 'map' | 'mine' | 'edit' | 'ar'
+  $('mapView').hidden = view !== 'map';
+  $('mine').hidden = view !== 'mine';
+  $('edit').hidden = view !== 'edit';
+  $('ar').hidden = view !== 'ar';
+  const main = view === 'map' || view === 'mine';
+  $('tabs').hidden = !main; $('addBtn').hidden = !main;
+  if (main){ tab = view; $('tabMap').setAttribute('aria-selected', view === 'map'); $('tabMine').setAttribute('aria-selected', view === 'mine'); }
+  if (view === 'map') setTimeout(() => map.invalidateSize(), 0);
+  if (view === 'mine') renderList();
+}
+const backToTab = () => show(tab);
+$('tabMap').onclick = () => show('map');
+$('tabMine').onclick = () => show('mine');
+
+/* ---------- みんなの地図 ---------- */
+const tiles = () => L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, attribution:'&copy; OpenStreetMap contributors'});
+const map = L.map('map', {zoomControl:false, attributionControl:true}).setView([36.2, 138.25], 5);
+tiles().addTo(map);
+L.control.zoom({position:'bottomright'}).addTo(map);
+const hereMarker = L.circleMarker([0, 0], {radius:8, color:'#fff', weight:3, fillColor:'#3b82f6', fillOpacity:1});
+$('locateBtn').onclick = () => here ? map.setView([here.lat, here.lng], 17) : toast('位置情報を許可してください');
+
+const spots = new Map();     // id -> {data, marker}
+let myId = null;
+function spotIcon(s){
+  const el = document.createElement('div');
+  el.className = 'pin' + (s.uid && s.uid === myId ? ' mine' : '');
+  el.style.backgroundImage = `url("${s.thumb}")`;
+  return L.divIcon({html:el, className:'', iconSize:[46, 46], iconAnchor:[23, 23], popupAnchor:[0, -22]});
+}
+function popupFor(s){
+  const d = document.createElement('div'); d.className = 'pop';
+  const img = new Image(); img.src = s.thumb; img.alt = '';
+  const b = document.createElement('b'); b.textContent = s.title;
+  const m = document.createElement('span');
+  m.textContent = [s.year, here ? `ここから ${fmtDist(haversine(here, s))}` : ''].filter(Boolean).join(' ・ ');
+  const btn = document.createElement('button'); btn.className = 'btn primary'; btn.textContent = 'カメラで重ねて見る';
+  btn.onclick = () => openShared(s);
+  d.append(img, b, m);
+  if (s.note){ const n = document.createElement('span'); n.textContent = s.note; d.append(n); }
+  d.append(btn);
+  return d;
+}
+function addSpot(s){
+  if (spots.has(s.id)) return;
+  const marker = L.marker([s.lat, s.lng], {icon:spotIcon(s)}).addTo(map);
+  marker.bindPopup(() => popupFor(s));
+  spots.set(s.id, {data:s, marker});
+}
+function removeSpot(id){ const x = spots.get(id); if (x){ x.marker.remove(); spots.delete(id); } }
+
+let loadTimer = null, loading = false;
+async function loadSpots(){
+  if (!fb || loading) return;
+  const b = map.getBounds();
+  if (b.getNorth() - b.getSouth() > 6){ note('拡大すると、その地域の写真が表示されます'); return; }
+  loading = true;
+  try{
+    const {fs, db} = fb;
+    const q = fs.query(fs.collection(db, 'spots'), fs.where('lat', '>=', b.getSouth()), fs.where('lat', '<=', b.getNorth()), fs.limit(400));
+    const snap = await fs.getDocs(q);
+    const W = b.getWest(), E = b.getEast();
+    let n = 0;
+    snap.forEach(doc => { const s = {id:doc.id, ...doc.data()}; if (s.lng >= W && s.lng <= E){ addSpot(s); n++; } });
+    note(n ? '' : 'この範囲にはまだ投稿がありません。最初の1枚を追加してみませんか？');
+  }catch(e){
+    console.error(e); note('写真を読み込めませんでした。通信を確認してください');
+  }finally{ loading = false; }
+}
+function note(t){ $('mapNote').textContent = t; $('mapNote').hidden = !t; }
+map.on('moveend', () => { clearTimeout(loadTimer); loadTimer = setTimeout(loadSpots, 350); });
+
+/* ---------- わたしの写真 ---------- */
+let photos = [];
+const urls = new Map();
+const urlFor = p => { if (!urls.has(p.id)) urls.set(p.id, URL.createObjectURL(p.blob)); return urls.get(p.id); };
+async function load(){ photos = await allPhotos(); renderList(); }
+function renderList(){
+  const rows = photos.map(p => ({p, d: here && p.lat != null ? haversine(here, p) : null}));
+  rows.sort((a, b) => (a.d ?? 1e12) - (b.d ?? 1e12) || b.p.created - a.p.created);
+  $('list').replaceChildren(...rows.map(({p, d}) => {
+    const b = document.createElement('button'); b.className = 'item';
+    const img = new Image(); img.src = urlFor(p); img.alt = '';
+    const div = document.createElement('div');
+    const t = document.createElement('div'); t.className = 't'; t.textContent = p.title;
+    const m = document.createElement('div'); m.className = 'm';
+    if (p.sharedId){ const s = document.createElement('span'); s.className = 'badge'; s.textContent = '公開中'; m.append(s); }
+    if (p.year){ const s = document.createElement('span'); s.textContent = p.year; m.append(s); }
+    const s2 = document.createElement('span');
+    if (d == null) s2.textContent = p.lat == null ? '場所未登録' : '';
+    else { s2.textContent = d < 60 ? `ここ！ ${fmtDist(d)}` : `あと ${fmtDist(d)}`; if (d < 60) s2.className = 'near'; }
+    m.append(s2); div.append(t, m); b.append(img, div);
+    b.onclick = () => openAr({...p, kind:'local'});
+    return b;
+  }));
+  $('empty').hidden = photos.length > 0;
+}
+
+/* ---------- 追加・編集 ---------- */
+let editing = null, pendingBlob = null, pendingHeading = null, pickMap = null, pickMarker = null;
+function openEdit(p){
+  editing = p || null; pendingBlob = null; pendingHeading = p?.heading ?? null;
+  $('editTitle').textContent = p ? '写真を編集' : '写真を追加';
+  $('fTitle').value = p?.title || ''; $('fYear').value = p?.year || ''; $('fNote').value = p?.note || '';
+  $('fLatLng').value = p?.lat != null ? `${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}` : '';
+  $('headVal').textContent = pendingHeading != null ? `方角 ${Math.round(pendingHeading)}°` : '';
+  $('pickImg').hidden = !p; $('pickLabel').hidden = !!p;
+  if (p) $('pickImg').src = urlFor(p);
+  $('file').value = '';
+  $('delBtn').hidden = !p;
+  $('delBtn').textContent = p?.sharedId ? '削除（公開も取り消す）' : '削除';
+  $('shareBox').hidden = !fb;
+  $('fPublic').checked = !!p?.sharedId; $('fRights').checked = !!p?.sharedId; $('rightsRow').hidden = !p?.sharedId;
+  show('edit'); scrollTo(0, 0);
+  if (!pickMap){
+    pickMap = L.map('pickMap', {attributionControl:false}).setView([36.2, 138.25], 5);
+    tiles().addTo(pickMap);
+    pickMap.on('click', e => setPick(e.latlng.lat, e.latlng.lng, false));
+  }
+  setTimeout(() => {
+    pickMap.invalidateSize();
+    const ll = parseLatLng($('fLatLng').value);
+    if (ll) setPick(ll.lat, ll.lng, true);
+    else { pickMarker?.remove(); pickMarker = null; const c = here || map.getCenter(); pickMap.setView([c.lat, c.lng], here ? 16 : map.getZoom()); }
+  }, 0);
+}
+function setPick(lat, lng, center){
+  $('fLatLng').value = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+  if (!pickMarker) pickMarker = L.circleMarker([lat, lng], {radius:9, color:'#2a1d08', weight:2, fillColor:'#e0a84f', fillOpacity:1}).addTo(pickMap);
+  else pickMarker.setLatLng([lat, lng]);
+  if (center) pickMap.setView([lat, lng], Math.max(pickMap.getZoom(), 16));
+}
+$('fLatLng').onchange = () => { const ll = parseLatLng($('fLatLng').value); if (ll) setPick(ll.lat, ll.lng, true); };
+$('fPublic').onchange = () => { $('rightsRow').hidden = !$('fPublic').checked; };
+$('addBtn').onclick = () => openEdit();
+$('cancelBtn').onclick = backToTab;
+$('file').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  pendingBlob = await shrink(f);
+  $('pickImg').src = URL.createObjectURL(pendingBlob); $('pickImg').hidden = false; $('pickLabel').hidden = true;
+};
+$('hereBtn').onclick = () => {
+  if (!navigator.geolocation) return toast('この端末では位置情報が使えません');
+  toast('現在地を取得中…');
+  navigator.geolocation.getCurrentPosition(p => {
+    setPick(p.coords.latitude, p.coords.longitude, true);
+    toast(`記録しました（誤差 ±${Math.round(p.coords.accuracy)} m）`);
+  }, () => toast('位置情報を許可してください'), {enableHighAccuracy:true, timeout:15000});
+};
+$('headBtn').onclick = async () => {
+  if (!await startOrientation()) return toast('方角センサーを使えませんでした');
+  setTimeout(() => {
+    if (heading == null) return toast('方角を取得できませんでした');
+    pendingHeading = heading; $('headVal').textContent = `方角 ${Math.round(heading)}°`;
+  }, 400);
+};
+$('delBtn').onclick = async () => {
+  const btn = $('delBtn');
+  if (btn.dataset.armed !== '1'){ btn.dataset.armed = '1'; const t = btn.textContent; btn.textContent = 'もう一度押すと削除'; setTimeout(() => { btn.dataset.armed = ''; btn.textContent = t; }, 3000); return; }
+  try{
+    if (editing.sharedId && fb) await unpublish(editing.sharedId);
+    await delPhoto(editing.id); await load(); backToTab(); toast('削除しました');
+  }catch(e){ console.error(e); toast('削除できませんでした'); }
+};
+function parseLatLng(s){
+  const m = s.trim().match(/^(-?\d+(?:\.\d+)?)\s*[,，\s]\s*(-?\d+(?:\.\d+)?)$/);
+  if (!m) return null;
+  const lat = +m[1], lng = +m[2];
+  return Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? {lat, lng} : null;
+}
+$('form').onsubmit = async e => {
+  e.preventDefault();
+  const blob = pendingBlob || editing?.blob;
+  if (!blob) return toast('写真を選んでください');
+  const raw = $('fLatLng').value.trim(), ll = raw ? parseLatLng(raw) : null;
+  if (raw && !ll) return toast('座標は「35.68, 139.76」の形で入力してください');
+  const wantPublic = !!fb && $('fPublic').checked;
+  if (wantPublic && !ll) return toast('公開するには撮影場所を記録してください');
+  if (wantPublic && !$('fRights').checked) return toast('公開してよい写真か確認のチェックを入れてください');
+  const p = {
+    id: editing?.id || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()),
+    created: editing?.created || Date.now(),
+    title: $('fTitle').value.trim(), year: $('fYear').value.trim(), note: $('fNote').value.trim(),
+    blob, lat: ll?.lat ?? null, lng: ll?.lng ?? null, heading: pendingHeading,
+    align: pendingBlob ? null : editing?.align || null,
+    sharedId: editing?.sharedId || null,
+  };
+  const btn = $('saveBtn'); btn.disabled = true; btn.textContent = wantPublic ? '公開中…' : '保存中…';
+  try{
+    // 公開中の内容を変えたときは、いったん取り下げて出し直す
+    if (p.sharedId && fb){ await unpublish(p.sharedId); p.sharedId = null; }
+    if (wantPublic) p.sharedId = await publish(p);
+    if (pendingBlob && editing){ URL.revokeObjectURL(urls.get(editing.id)); urls.delete(editing.id); }
+    await putPhoto(p); await load();
+    if (wantPublic){ show('map'); map.setView([p.lat, p.lng], Math.max(map.getZoom(), 16)); toast('みんなの地図に公開しました'); }
+    else { show('mine'); toast('保存しました'); }
+  }catch(err){
+    console.error(err);
+    toast(wantPublic ? '公開できませんでした。通信を確認してもう一度お試しください' : '保存できませんでした');
+    if (editing?.sharedId && !p.sharedId){ editing.sharedId = null; await putPhoto({...editing}); }   // 取り下げだけ済んだ場合の整合
+  }finally{ btn.disabled = false; btn.textContent = '保存'; }
+};
+async function shrink(file){
+  try{
+    const bmp = await createImageBitmap(file);
+    const k = Math.min(1, 2400 / Math.max(bmp.width, bmp.height));
+    if (k === 1 && file.size < 3e6) return file;
+    const c = document.createElement('canvas'); c.width = Math.round(bmp.width*k); c.height = Math.round(bmp.height*k);
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    return await new Promise(r => c.toBlob(r, 'image/jpeg', .9));
+  }catch{ return file; }
+}
+
+/* ---------- AR ---------- */
+let cur = null, stream = null, curUrl = null;
+let A = {x:0, y:0, s:1, r:0};
+let mode = 'fade', mix = 60, locked = false;
+const old = $('old'), video = $('bgVideo'), bgImg = $('bgImg');
+
+async function openShared(s){
+  toast('写真を読み込み中…');
+  try{
+    const {fs, db} = fb;
+    const d = await fs.getDoc(fs.doc(db, 'images', s.id));
+    if (!d.exists()){ toast('この写真は削除されました'); removeSpot(s.id); return; }
+    const blob = await (await fetch(d.data().data)).blob();
+    openAr({...s, blob, align: lsGet('align:' + s.id), kind:'shared'});
+  }catch(e){ console.error(e); toast('写真を読み込めませんでした'); }
+}
+
+async function openAr(p){
+  cur = p; show('ar');
+  $('arTitle').textContent = p.title; $('arDist').textContent = p.year || '';
+  $('credit').hidden = p.kind !== 'shared';
+  const mine = p.kind === 'local' || (p.uid && p.uid === myId);
+  $('arAction').textContent = p.kind === 'local' ? '編集' : mine ? '取り下げ' : '報告';
+  $('arAction').dataset.armed = '';
+  if (curUrl) URL.revokeObjectURL(curUrl);
+  old.src = curUrl = URL.createObjectURL(p.blob);
+  await old.decode().catch(() => {});
+  const saved = p.align || {};
+  A = {x:saved.x ?? 0, y:saved.y ?? 0, s:saved.s ?? 1, r:saved.r ?? 0};
+  mode = saved.mode || 'fade'; mix = saved.mix ?? 60; locked = false;
+  $('mix').value = mix; setMode(mode); $('lockBtn').classList.remove('on');
+  bgImg.hidden = true; video.hidden = false; $('camErr').hidden = true;
+  startOrientation();
+  updateGuide(); apply();
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}, width:{ideal:1920}, height:{ideal:1080}}, audio:false});
+    video.srcObject = stream; await video.play().catch(() => {});
+  }catch{
+    video.hidden = true; $('camErr').hidden = false;
+    $('camErrMsg').textContent = location.protocol !== 'https:' && location.hostname !== 'localhost'
+      ? 'カメラは https のページでしか使えません。代わりに今の景色を撮影して重ねられます。'
+      : 'カメラを使えませんでした（許可されていない可能性があります）。代わりに今の景色を撮影して重ねられます。';
+  }
+}
+function stopCam(){ stream?.getTracks().forEach(t => t.stop()); stream = null; video.srcObject = null; }
+async function saveAlign(){
+  if (!cur) return;
+  const a = {...A, mode, mix};
+  if (cur.kind === 'shared') lsSet('align:' + cur.id, a);   // 他の人の写真の合わせ位置は自分の端末にだけ保存
+  else { const p = photos.find(x => x.id === cur.id); if (p){ p.align = a; await putPhoto(p); } }
+}
+async function closeAr(){ stopCam(); await saveAlign(); backToTab(); }
+$('closeAr').onclick = closeAr;
+$('arAction').onclick = async () => {
+  const btn = $('arAction');
+  if (cur.kind === 'local'){ stopCam(); await saveAlign(); openEdit(photos.find(x => x.id === cur.id)); return; }
+  if (btn.dataset.armed !== '1'){ btn.dataset.armed = '1'; btn.textContent = btn.textContent === '報告' ? '不適切として報告？' : '本当に取り下げる？'; return; }
+  try{
+    if (cur.uid === myId){
+      await unpublish(cur.id);
+      const local = photos.find(x => x.sharedId === cur.id);
+      if (local){ local.sharedId = null; await putPhoto(local); }
+      toast('取り下げました'); closeAr();
+    } else { await report(cur.id); toast('報告しました。管理者が確認します'); btn.textContent = '報告済み'; btn.disabled = true; setTimeout(() => btn.disabled = false, 1500); }
+  }catch(e){ console.error(e); toast(cur.uid === myId ? '取り下げできませんでした' : 'すでに報告済みか、送信できませんでした'); }
+  btn.dataset.armed = '';
+};
+$('snap').onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  bgImg.src = URL.createObjectURL(f); bgImg.hidden = false; $('camErr').hidden = true;
+};
+
+function baseSize(){
+  const W = innerWidth, H = innerHeight, iw = old.naturalWidth || 1, ih = old.naturalHeight || 1;
+  const k = Math.min(W/iw, H/ih);
+  return {w: iw*k, h: ih*k};
+}
+function apply(){
+  const b = baseSize();
+  old.style.width = b.w + 'px'; old.style.height = b.h + 'px';
+  old.style.transform = `translate(-50%,-50%) translate(${A.x}px,${A.y}px) rotate(${A.r}deg) scale(${A.s})`;
+  if (mode === 'fade'){
+    old.style.opacity = mix/100; old.style.clipPath = 'none'; $('wipeLine').hidden = true;
+  } else {
+    old.style.opacity = 1;
+    const lineX = innerWidth * mix/100;
+    const left = innerWidth/2 + A.x - b.w*A.s/2;
+    const visibleW = Math.max(0, Math.min(b.w*A.s, lineX - left));
+    old.style.clipPath = `inset(0 ${100 - visibleW / (b.w*A.s) * 100}% 0 0)`;
+    $('wipeLine').hidden = false; $('wipeLine').style.left = lineX + 'px';
+  }
+}
+function setMode(m){
+  mode = m;
+  $('modeFade').classList.toggle('on', m === 'fade'); $('modeWipe').classList.toggle('on', m === 'wipe');
+  $('sLeft').textContent = m === 'fade' ? '今' : '←'; $('sRight').textContent = m === 'fade' ? '昔' : '→';
+  apply();
+}
+$('modeFade').onclick = () => setMode('fade');
+$('modeWipe').onclick = () => setMode('wipe');
+$('mix').oninput = e => { mix = +e.target.value; apply(); };
+$('lockBtn').onclick = () => { locked = !locked; $('lockBtn').classList.toggle('on', locked); toast(locked ? '位置をロックしました' : 'ロックを解除しました'); };
+$('resetBtn').onclick = () => { A = {x:0, y:0, s:1, r:0}; apply(); };
+addEventListener('resize', () => { if (!$('ar').hidden) apply(); });
+
+function updateGuide(){
+  const g = $('guide');
+  if (!cur){ g.hidden = true; return; }
+  let parts = [];
+  if (here && cur.lat != null){
+    const d = haversine(here, cur);
+    $('arDist').textContent = [cur.year, d < 30 ? '撮影地点に到着' : `撮影地点まで ${fmtDist(d)}`].filter(Boolean).join(' ・ ');
+    if (d >= 30 && heading != null){
+      const diff = ((bearing(here, cur) - heading + 540) % 360) - 180;
+      parts.push(Math.abs(diff) < 15 ? '↑ この先に撮影地点' : diff > 0 ? `→ 右へ ${Math.round(diff)}°（撮影地点の方向）` : `← 左へ ${Math.round(-diff)}°（撮影地点の方向）`);
+    }
+    if (d < 60 && cur.heading != null && heading != null){
+      const diff = ((cur.heading - heading + 540) % 360) - 180;
+      parts = [Math.abs(diff) < 8 ? '◎ 撮影した向きと一致' : diff > 0 ? `→ 右へ ${Math.round(diff)}°向けると撮影時の向き` : `← 左へ ${Math.round(-diff)}°向けると撮影時の向き`];
+    }
+  }
+  g.textContent = parts[0] || ''; g.hidden = !parts.length;
+}
+
+/* 指1本で移動、2本でピンチ拡大＋回転 */
+const pts = new Map(); let gest = null;
+const stage = $('stage');
+stage.addEventListener('pointerdown', e => { if (locked) return; stage.setPointerCapture(e.pointerId); pts.set(e.pointerId, {x:e.clientX, y:e.clientY}); startGest(); });
+stage.addEventListener('pointermove', e => {
+  if (!pts.has(e.pointerId)) return;
+  pts.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  const P = [...pts.values()];
+  if (P.length === 1 && gest?.n === 1){
+    A.x = gest.A.x + P[0].x - gest.p[0].x; A.y = gest.A.y + P[0].y - gest.p[0].y;
+  } else if (P.length >= 2 && gest?.n >= 2){
+    const [a, b] = P, [a0, b0] = gest.p;
+    const d = Math.hypot(b.x-a.x, b.y-a.y), d0 = Math.hypot(b0.x-a0.x, b0.y-a0.y) || 1;
+    const ang = Math.atan2(b.y-a.y, b.x-a.x), ang0 = Math.atan2(b0.y-a0.y, b0.x-a0.x);
+    A.s = Math.min(8, Math.max(.2, gest.A.s * d/d0));
+    A.r = gest.A.r + (ang-ang0)*180/Math.PI;
+    A.x = gest.A.x + (a.x+b.x)/2 - (a0.x+b0.x)/2; A.y = gest.A.y + (a.y+b.y)/2 - (a0.y+b0.y)/2;
+  }
+  apply();
+});
+const up = e => { pts.delete(e.pointerId); startGest(); };
+stage.addEventListener('pointerup', up); stage.addEventListener('pointercancel', up);
+function startGest(){ gest = pts.size ? {n:pts.size, p:[...pts.values()].map(p => ({...p})), A:{...A}} : null; }
+stage.addEventListener('wheel', e => { if (locked) return; e.preventDefault(); if (e.shiftKey) A.r += e.deltaY > 0 ? 1 : -1; else A.s = Math.min(8, Math.max(.2, A.s * (e.deltaY > 0 ? .95 : 1.05))); apply(); }, {passive:false});
+
+$('shot').onclick = async () => {
+  const W = innerWidth, H = innerHeight, dpr = Math.min(3, devicePixelRatio || 1);
+  const c = document.createElement('canvas'); c.width = W*dpr; c.height = H*dpr;
+  const g = c.getContext('2d'); g.scale(dpr, dpr); g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
+  const bg = !video.hidden && video.videoWidth ? video : (!bgImg.hidden ? bgImg : null);
+  if (bg){
+    const iw = bg.videoWidth || bg.naturalWidth, ih = bg.videoHeight || bg.naturalHeight;
+    const k = Math.max(W/iw, H/ih);
+    g.drawImage(bg, (W-iw*k)/2, (H-ih*k)/2, iw*k, ih*k);
+  }
+  const b = baseSize();
+  g.save();
+  if (mode === 'wipe'){ g.beginPath(); g.rect(0, 0, W*mix/100, H); g.clip(); }
+  else g.globalAlpha = mix/100;
+  g.translate(W/2 + A.x, H/2 + A.y); g.rotate(A.r*Math.PI/180); g.scale(A.s, A.s);
+  g.drawImage(old, -b.w/2, -b.h/2, b.w, b.h);
+  g.restore();
+  const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', .92));
+  const name = `${cur.title}_今昔.jpg`.replace(/[\\/:*?"<>|]/g, '_');
+  const file = new File([blob], name, {type:'image/jpeg'});
+  if (navigator.canShare?.({files:[file]})){ try{ await navigator.share({files:[file], title:cur.title}); return; }catch(e){ if (e.name === 'AbortError') return; } }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  toast('画像を保存しました');
+};
+
+let tt;
+function toast(msg){ const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(tt); tt = setTimeout(() => t.hidden = true, 2400); }
+
+/* ---------- 起動 ---------- */
+load().catch(() => toast('保存領域を開けませんでした（プライベートモードでは保存できません）'));
+initFb().then(async ok => {
+  if (!ok){ note('みんなの地図はまだ設定されていません（config.js）。自分の写真は使えます'); return; }
+  myId = await currentUidIfAny();
+  loadSpots();
+}).catch(e => { console.error(e); note('みんなの地図に接続できませんでした'); });
+show('map');
+</script>
+</body>
+</html>
